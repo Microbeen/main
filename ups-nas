@@ -1,0 +1,204 @@
+#-------------------------Подстановка имен----------------------#
+substitutions:
+  devicename: ups-nas
+  device: ups_nas
+  up_device: "UPS NAS"
+  board: esp32dev
+  framework: arduino
+  update: 60s
+#---------------------------Тип платы ESP-----------------------#
+esp32:
+  board: $board
+  framework:
+    type: $framework
+#---------------------------Имя платы ESP-----------------------#
+esphome:
+  name: ${devicename}
+  project:
+    name: "Espressif.ESP32_Devkitc_V4"
+    version: "2.1.7"
+
+#--------------------------Параметры WiFi-----------------------#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret ups_nas_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+#-----------------------Параметры веб-сервера-------------------#
+web_server:
+  port: 80
+logger:
+  baud_rate: 0
+#---------------------------Параметры API-----------------------#
+api:
+  encryption:
+    key: !secret ups_nas_api
+#---------------------------Параметры OTA-----------------------#
+ota:
+  password: !secret ups_nas_ota
+#-------------------------Параметры DS18B20---------------------#
+dallas:
+  - pin: GPIO32
+    id: dallas_wire
+    update_interval: ${update}
+#-----------------------Параметры ModBus/UART-------------------#
+modbus:
+uart:
+  tx_pin: GPIO1
+  rx_pin: GPIO3
+  baud_rate: 9600
+  stop_bits: 2
+#---------------------Параметры ШИМ-контроллера-----------------#
+output:
+  - platform: ledc
+    pin: GPIO16
+    id: ${device}_fan_pwm
+    frequency: 20000Hz
+    min_power: 30%
+    max_power: 70%
+#---------------------Управление вентиляторами------------------#
+fan:
+  - platform: speed
+    id: ${device}_fan_speed
+    output: ${device}_fan_pwm
+    name: "${up_device} fan"
+
+#==============================Сенсоры==========================#
+sensor:
+#-----------------------Мощность сигнала WiFi-------------------#
+  - platform: wifi_signal
+    name: "${up_device} WiFi signal"
+    id: ${device}_wifi 
+    update_interval: ${update}
+    icon: mdi:wifi-strength-2
+#--------------------Конвертация времени работы-----------------#
+  - platform: uptime
+    id: ${device}_uptime
+    internal: true
+    update_interval: ${update}
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: ${device}_uptime_text
+            state: !lambda |-
+              int seconds = round(id(${device}_uptime).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds /  60;
+              seconds = seconds % 60;
+              return (
+                (days ? String(days) + "д " : "") +
+                (hours ? String(hours) + "ч " : "") +
+                (minutes ? String(minutes) + "м " : "") +
+                (String(seconds) + "с")
+              ).c_str();
+#-----------------------------PZEM-004T-------------------------#
+  - platform: pzemac
+    current:
+      id: ${device}_curr
+      name: "${up_device} current"
+    voltage:
+      id: ${device}_volt
+      name: "${up_device} voltage"
+    energy:
+      id: ${device}_energ
+      name: "${up_device} energy"
+    power:
+      id: ${device}_power
+      name: "${up_device} power"
+    frequency:
+      id: ${device}_freq
+      name: "${up_device} frequency"
+      on_raw_value:
+        then:
+            - if:
+                condition:
+                  lambda: 'return id(${device}_freq).state < 75;'
+                then:
+                  - text_sensor.template.publish:
+                      id: ${device}_mode
+                      state: !lambda |-
+                        return ("ONLINE");
+                else:
+                  - text_sensor.template.publish:
+                      id: ${device}_mode
+                      state: !lambda |-
+                        return ("BATTERY");
+    power_factor:
+      id: ${device}_pf   
+      name: "${up_device} P.F."
+    update_interval: ${update}
+#------------------------------DS18B20--------------------------#
+  - platform: dallas
+    address: 0x597177c50264ff28
+    id: temp_1
+    name: "${up_device} VT1 temp"
+  - platform: dallas
+    address: 0xc1089ac50264ff28
+    id: temp_2
+    name: "${up_device} VT2 temp"
+  - platform: dallas
+    address: 0x979a19fa0264ff28
+    id: temp_3
+    name: "${up_device} PZEM temp"
+  - platform: dallas
+    address: 0x3609c8c70264ff28
+    id: temp_4
+    name: "${up_device} T1 temp"
+    on_value:
+      then:
+      - lambda: |-
+          auto call = id(${device}_fan_speed).turn_on();
+          call.set_speed((id(temp_4).raw_state)-10);
+          call.perform();
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: ${device}_fan_speed_text
+            state: !lambda |-
+              int fan_speed = round(id(${device}_fan_speed).speed)*55;
+              return (
+                (String(fan_speed) + " rpm")
+              ).c_str();    
+  - platform: dallas
+    address: 0x6abf44c10264ff28
+    id: temp_5
+    name: "${up_device} Q1 temp"
+
+#=========================Текстовые сенсоры=====================#
+text_sensor:
+#---------------------------Время работы------------------------#
+  - platform: template
+    name: "${up_device} uptime"
+    id: ${device}_uptime_text
+    icon: mdi:clock-plus-outline
+#-----------------------скорость вентилятора--------------------#
+  - platform: template
+    name: "${up_device} fan speed"
+    id: ${device}_fan_speed_text
+    icon: mdi:fan
+#-------------------------Статус работы ИБП---------------------#
+  - platform: template
+    name: "${up_device} mode"
+    id: ${device}_mode
+    icon: mdi:connection
+
+#=========================Бинарные сенсоры======================#
+binary_sensor:
+#------------------------Статус подключения---------------------#
+  - platform: status
+    name: "${up_device} status"
+    id: ${device}_status
+
+#=========================Переключатели=========================#
+switch:
+#---------------------Удаленный рестарт ESP---------------------#
+  - platform: restart
+    id: ${device}_restart
+    name: "${up_device} restart"
+    icon: "mdi:restart"
