@@ -1,0 +1,325 @@
+# датчик дождя прозрачн
+# ds18b20 коричн - 12
+# ltr390 sda зел scl бел
+# датчик молнии irq - 25
+
+
+#------------------------Подстановка имен-----------------------#
+substitutions:
+  devicename: meteo-sensor
+  device: meteo_sensor
+  up_device: "MetSens"
+  board: esp32dev
+  framework: arduino
+  update: 60s
+#-------------------------Тип платы ESP-------------------------#
+esp32:
+  board: $board
+  framework:
+    type: $framework
+#-------------------------Имя платы ESP-------------------------#
+esphome:
+  name: ${devicename}
+  project:
+    name: "espressif.ESP32_Devkitc_V4"
+    version: "2.1.6"
+#-----------------------Внешние библиотеки----------------------#
+  libraries:
+    - Wire
+    - "vurdalakov/RadSensBoard"
+  includes:
+    - custom_libraries/RadSens1v2/_radsensboard.h
+    - custom_libraries/RadSens1v2/CountsPerMinute.h
+#-------------------------Параметры WiFi------------------------#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret met_sens_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+#-----------------------Параметры логгера-----------------------#
+logger:
+  baud_rate: 0
+#-------------------------Параметры API-------------------------#
+api:
+  encryption:
+    key: !secret met_sens_api
+  reboot_timeout: 0s
+#-------------------------Параметры OTA-------------------------#
+ota:
+  password: !secret met_sens_ota
+#-----------------------Параметры DS18B20-----------------------#
+dallas:
+  - pin: 14
+    id: dallas_wire
+    update_interval: ${update}
+#-------------------------Параметры UART------------------------#
+uart:
+  rx_pin: GPIO16
+  baud_rate: 9600
+#-------------------------Параметры I2C-------------------------#  
+i2c:
+  sda: 27
+  scl: 26
+  scan: false
+as3935_i2c:
+  irq_pin: GPIO25
+#--------Управление питанием и обновление датчиков дождя--------#
+interval:
+  - interval: 120s
+    then:
+      - if:
+          condition:
+            lambda: 'return id(${device}_sum_temp).state >= -2;'
+          then:
+            - switch.turn_on: ${device}_rain_sensor_power
+            - delay: 1s
+            - text_sensor.template.publish:
+                id: ${device}_rain
+                state: !lambda |-
+                  if (id(${device}_rain_sensor_1).state && id(${device}_rain_sensor_1).state) {
+                    return "NO RAIN"; 
+                  } else {
+                    return "RAIN"; }
+            - switch.turn_off: ${device}_rain_sensor_power
+          else:
+            - text_sensor.template.publish:
+                id: ${device}_rain
+                state: !lambda |-
+                  return "COLD";
+
+#============================Сенсоры============================#
+sensor:
+#---------------------Мощность сигнала WiFi---------------------#
+  - platform: wifi_signal
+    id: ${device}_wifi 
+    name: "${up_device} WiFi signal"
+    update_interval: ${update}
+    icon: mdi:wifi-strength-2
+    device_class: "signal_strength"
+#-------------------Конвертация времени работы------------------#
+  - platform: uptime
+    id: ${device}_uptime
+    internal: true
+    update_interval: ${update}
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: ${device}_uptime_convert
+            state: !lambda |-
+              int seconds = round(id(${device}_uptime).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds /  60;
+              seconds = seconds % 60;
+              return (
+                (days ? String(days) + "д " : "") +
+                (hours ? String(hours) + "ч " : "") +
+                (minutes ? String(minutes) + "м " : "") +
+                (String(seconds) + "с")
+              ).c_str();
+#--------------------Датчики качества воздуха-------------------# 
+  - platform: sm300d2
+    co2:
+      id: ${device}_co2
+      name: "${up_device} CO2"
+      device_class: "carbon_dioxide"      
+    formaldehyde:
+      id: ${device}_ch2o
+      name: "${up_device} formaldehyde"
+    tvoc:
+      id: ${device}_tvoc
+      name: "${up_device} TVOC"
+      device_class: "volatile_organic_compounds"
+    pm_2_5:
+      id: ${device}_pm25
+      name: "${up_device} PM2.5"
+      device_class: "pm25"
+    pm_10_0:
+      id: ${device}_pm10
+      name: "${up_device} PM10"
+      device_class: "pm10"
+    temperature:
+      id: ${device}_temp_1
+      name: "${up_device} temperature 1"
+      filters:
+        - offset: -4.0
+      device_class: "temperature"
+    humidity:
+      id: ${device}_humi
+      name: "${up_device} humidity"
+      filters:
+        - multiply: 1.1
+      device_class: "humidity"
+    update_interval: ${update}
+#---------------Датчики освещения и ультрафиолета---------------#    
+  - platform: ltr390
+    gain: X18
+    resolution: 20
+    address: 0x53
+    window_correction_factor: 1.5
+    uv:
+      id: ${device}_uv
+      name: "${up_device} UV"
+      icon: mdi:sun-wireless-outline
+    uv_index:
+      id: ${device}_uv_index
+      name: "${up_device} UV index"
+      icon: mdi:sun-wireless    
+    light:
+      id: ${device}_light
+      name: "${up_device} light"
+      icon: mdi:weather-sunny
+    ambient_light:
+      id: ${device}_amb_light
+      name: "${up_device} ambient light"
+      icon: mdi:weather-sunny-alert
+    update_interval: ${update}
+#-------------------Датчик расчета точки росы-------------------#
+  - platform: template
+    id: ${device}_dewpoint
+    name: "${up_device} dew point"
+    lambda: |-
+        return (243.5*(log(id(${device}_humi).state/100)+
+        ((17.67*id(${device}_sum_temp).state)/
+        (243.5+id(${device}_sum_temp).state)))/
+        (17.67-log(id(${device}_humi).state/100)-
+        ((17.67*id(${device}_sum_temp).state)/
+        (243.5+id(${device}_sum_temp).state))));
+    unit_of_measurement: °C
+    update_interval: ${update}
+    icon: mdi:thermometer-water
+#------------------------Датчик радиации------------------------#
+  - platform: custom
+    lambda: |-
+      auto rad_sens = new MyRadSens();
+      App.register_component(rad_sens);
+      return {rad_sens->IntensityDynamic_Sensor,
+        rad_sens->IntensityStatic_Sensor,
+        rad_sens->CurrentCPM_Sensor,
+        rad_sens->MaxCPM_Sensor};
+    sensors:
+      - id: ${device}_dynamic_int
+        name: "${up_device} dynamic intensity"
+        accuracy_decimals: 1
+        unit_of_measurement: μR/h
+        icon: mdi:radioactive-circle-outline
+      - id: ${device}_static_int
+        name: "${up_device} static intensity"
+        accuracy_decimals: 1
+        unit_of_measurement: μR/h
+        icon: mdi:radioactive
+      - id: ${device}_current_cpm
+        name: "${up_device} current CPM"
+        accuracy_decimals: 1
+        unit_of_measurement: CPM
+        icon: mdi:timeline-clock-outline
+      - id: ${device}_max_cpm
+        name: "${up_device} max CPM"
+        filters:
+        - delta: 900
+        accuracy_decimals: 1
+        unit_of_measurement: CPM
+        icon: mdi:timeline-clock
+#---------------Датчик расчета средней температуры--------------#
+  - platform: template
+    id: ${device}_sum_temp
+    name: "${up_device} sum temp"
+    lambda: |-
+        return ((id(${device}_temp_2).state)+
+        (id(${device}_temp_3).state))/2;
+    unit_of_measurement: °C
+    update_interval: ${update}
+    icon: mdi:thermometer
+#-------------------------Датчик молнии-------------------------#
+  - platform: as3935
+    lightning_energy:
+      id: ${device}_lightning_energy
+      name: "${up_device} lightning energy"
+    distance:
+      id: ${device}_storm_distance 
+      name: "${up_device} storm distance"
+#----------------------------DS18B20----------------------------#
+  - platform: dallas
+    address: 0x52d469c40264ff28
+    id: ${device}_temp_2
+    filters:
+      - offset: -2.0
+    name: "${up_device} temperature 2"
+    device_class: "temperature"
+  - platform: dallas
+    address: 0x2ae01dfa0264ff28
+    id: ${device}_temp_3
+    filters:
+      - offset: -2.0
+    name: "${up_device} temperature 3"
+    device_class: "temperature"
+   
+#=========================Переключатели=========================#
+switch:
+#----------------Включение питания датчиков дождя---------------#
+  - platform: gpio
+    name: "power"
+    id: ${device}_rain_sensor_power
+    pin: GPIO21
+    internal: true
+
+#=======================Текстовые сенсоры=======================#
+text_sensor:
+#--------------------------Время работы-------------------------#
+  - platform: template
+    id: ${device}_uptime_convert
+    name: "${up_device} uptime"
+    update_interval: ${update}
+    icon: mdi:clock-plus-outline
+#-----------------------Информация о сети-----------------------#    
+  - platform: wifi_info
+    ip_address:
+      name: "${up_device} IP"
+      icon: mdi:ip
+    bssid:
+      name: "${up_device} BSSID"
+      icon: mdi:link
+#--------------------------Датчик дождя-------------------------#
+  - platform: template
+    id: ${device}_rain
+    name: "${up_device} rain"
+    update_interval: ${update}
+    icon: mdi:weather-pouring
+
+#========================Бинарные сенсоры=======================#
+binary_sensor:
+#-----------------------Статус подключения----------------------#
+  - platform: status
+    id: ${device}_status
+    name: "${up_device} status"
+#-------------------------Датчик дождя 1------------------------#    
+  - platform: gpio
+    id: ${device}_rain_sensor_1
+#    internal: true
+    pin: 
+      number: 18
+      mode: INPUT_PULLUP
+#-------------------------Датчик дождя 2------------------------#
+  - platform: gpio
+    id: ${device}_rain_sensor_2
+#    internal: true
+    pin: 
+      number: 19
+      mode: INPUT_PULLUP
+#-------------------------Датчик молнии-------------------------#
+  - platform: as3935
+    id: ${device}_storm_alert
+    name: "${up_device} storm alert"
+
+#=============================Кнопки============================#
+button:
+#---------------------Удаленный рестарт ESP---------------------#
+  - platform: restart
+    id: ${device}_restart
+    name: "${up_device} restart"
+    icon: mdi:restart
