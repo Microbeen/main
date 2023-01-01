@@ -1,0 +1,239 @@
+#------------------------Подстановка имен-----------------------#
+substitutions:
+  devicename: input-meter
+  device: input_meter
+  up_device: "InpMet"
+  board: esp01_1m
+  framework: arduino
+  update: 60s
+#-------------------------Тип платы ESP-------------------------#
+esp8266:
+  board: $board
+#-------------------------Имя платы ESP-------------------------#
+esphome:
+  name: ${devicename}
+  project:
+    name: "Espressif.Esp8266-07s"
+    version: "0.2.7"
+#-----------------------Внешние библиотеки----------------------#
+external_components:
+  - source: github://dentra/esphome@tuya-raw-fix 
+    components: ["tuya"]
+  - source: github://dentra/esphome@tuya-raw-fix-standalone
+    components: ["tuya"]
+  - source: github://dentra/esphome-components
+#-------------------------Параметры WiFi------------------------#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret inp_met_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+#-----------------------Параметры логгера-----------------------#
+logger:
+  baud_rate: 0
+#-------------------------Параметры API-------------------------#
+api:
+  encryption:
+    key: !secret inp_met_api
+  reboot_timeout: 0s
+#-------------------------Параметры OTA-------------------------#
+ota:
+  password: !secret inp_met_ota
+#-----------------------Параметры DS18B20-----------------------#
+dallas:
+  - pin: GPIO4
+    id: dallas_wire
+    update_interval: ${update}
+#-------------------------Параметры UART------------------------#
+uart:
+  rx_pin: GPIO3
+  tx_pin: GPIO1
+  baud_rate: 9600
+#-------------------Параметры связи с Tuya MCU------------------#
+tuya:
+  on_datapoint_update:
+    - sensor_datapoint: 6
+      datapoint_type: raw
+      then:
+        - lambda: |-
+            id(${device}_voltage).publish_state((x[0] << 8 | x[1]) * 0.1);
+            id(${device}_current).publish_state((x[3] << 8 | x[4]) * 0.001);
+            id(${device}_power).publish_state((x[6] << 8 | x[7]) * 0.1);
+#-----------Синхронизация времени через HomeAssistant-----------#
+time:
+  - platform: homeassistant
+    id: esptime
+
+#============================Сенсоры============================#
+sensor:
+#---------------------Мощность сигнала WiFi---------------------#
+  - platform: wifi_signal
+    id: ${device}_wifi 
+    name: "${up_device} WiFi signal"
+    update_interval: ${update}
+    icon: mdi:wifi-strength-2
+    device_class: "signal_strength"
+#-------------------Конвертация времени работы------------------#
+  - platform: uptime
+    id: ${device}_uptime
+    internal: true
+    update_interval: ${update}
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: ${device}_uptime_convert
+            state: !lambda |-
+              int seconds = round(id(${device}_uptime).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds /  60;
+              seconds = seconds % 60;
+              return (
+                (days ? String(days) + "д " : "") +
+                (hours ? String(hours) + "ч " : "") +
+                (minutes ? String(minutes) + "м " : "") +
+                (String(seconds) + "с")
+              ).c_str();
+#---------------------Датчики электропитания--------------------# 
+  - platform: "tuya"
+    id: ${device}_total
+    name: "${up_device} total energy"
+    sensor_datapoint: 1
+    accuracy_decimals: 3
+    filters:
+      - multiply: 0.001
+    unit_of_measurement: "kWh"
+    icon: mdi:sigma
+    device_class: "energy"
+  - platform: template
+    id: ${device}_voltage
+    name: "${up_device} voltage"
+    unit_of_measurement: "V"
+    icon: mdi:alpha-v-circle-outline
+    device_class: "voltage"
+  - platform: template
+    id: ${device}_current
+    name: "${up_device} current"
+    accuracy_decimals: 2
+    unit_of_measurement: "A"
+    icon: mdi:alpha-a-circle-outline
+    device_class: "current"
+  - platform: template
+    id: ${device}_power
+    name: "${up_device} active power"
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    icon: mdi:home-lightning-bolt-outline
+    device_class: "power"
+  - platform: "energy_monitoring"
+    power: ${device}_power
+    voltage: ${device}_voltage
+    current: ${device}_current
+    apparent_power:
+      id: ${device}_apparent_power
+      name: "${up_device} apparent power"
+      unit_of_measurement: "VA"
+      icon: mdi:flash
+      device_class: "apparent power"
+    reactive_power:
+      id: ${device}_reactive_power
+      name: "${up_device} reactive power"
+      unit_of_measurement: "VA"
+      icon: mdi:flash
+      device_class: "reactive power"
+    power_factor:
+      id: ${device}_pf
+      name: "${up_device} power factor"
+      icon: mdi:math-cos
+      unit_of_measurement: "%"
+      device_class: "power factor"
+  - platform: "tuya"
+    sensor_datapoint: 101
+    id: ${device}_voltage_limit_max
+    name: "${up_device} voltage limit max"
+    unit_of_measurement: "V"
+    icon: mdi:arrow-collapse-up
+  - platform: "tuya"
+    sensor_datapoint: 102
+    id: ${device}_voltage_limit_min
+    name: "${up_device} voltage limit min"
+    unit_of_measurement: "V"
+    icon: mdi:arrow-collapse-down
+  - platform: "tuya"
+    sensor_datapoint: 103
+    id: ${device}_frequency
+    name: "${up_device} frequency"
+    unit_of_measurement: "Hz"
+    icon: mdi:math-sin
+    device_class: "frequency"
+#-----------------------Хрен знает что это----------------------#
+  - platform: "tuya"
+    id: ${device}_z_nodata_1
+    name: "${up_device} z NODATA 1"
+    sensor_datapoint: 13
+  - platform: "tuya"
+    id: ${device}_z_nodata_2
+    name: "${up_device} z NODATA 2"
+    sensor_datapoint: 104
+#----------------------------DS18B20----------------------------#
+  - platform: dallas
+    address: 0x673c01d607c85428
+    id: ${device}_temp
+    name: "${up_device} temperature"
+    device_class: "temperature"
+
+#===========================Светодиоды==========================#
+light:
+#-----------------------Светодиод статуса-----------------------#
+  - platform: status_led
+    id: ${device}_led
+    internal: true
+    pin:
+      number: GPIO2
+      inverted: true
+
+#=========================Переключатели=========================#
+switch:
+#-------------Включение общего реле электроснабжения------------#
+  - platform: "tuya"
+    id: ${device}_main_switch
+    name: "${up_device} main power"
+    switch_datapoint: 16
+    icon: mdi:power
+
+#=======================Текстовые сенсоры=======================#
+text_sensor:
+#--------------------------Время работы-------------------------#
+  - platform: template
+    id: ${device}_uptime_convert
+    name: "${up_device} uptime"
+    update_interval: ${update}
+    icon: mdi:clock-plus-outline
+#-----------------------Информация о сети-----------------------#    
+  - platform: wifi_info
+    ip_address:
+      name: "${up_device} IP"
+      icon: mdi:ip
+    bssid:
+      name: "${up_device} BSSID"
+      icon: mdi:link
+
+#========================Бинарные сенсоры=======================#
+binary_sensor:
+#-----------------------Статус подключения----------------------#
+  - platform: status
+    id: ${device}_status
+    name: "${up_device} status"
+
+#=============================Кнопки============================#
+button:
+#---------------------Удаленный рестарт ESP---------------------#
+  - platform: restart
+    id: ${device}_restart
+    name: "${up_device} restart"
+    icon: mdi:restart
