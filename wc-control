@@ -1,0 +1,540 @@
+#------------------------Подстановка имен-----------------------#
+substitutions:
+  devicename: wc-control
+  device: wc_ctrl
+  up_device: "WC Control"
+  board: esp-wrover-kit
+  framework: arduino
+  update: 60s
+#-------------------------Тип платы ESP-------------------------#
+esp32:
+  board: $board
+  framework:
+    type: $framework
+#-------------------------Имя платы ESP-------------------------#
+esphome:
+  name: ${devicename}
+  project:
+    name: "Espressif.ESP32-WROOVER-IB"
+    version: "0.0.1"
+  platformio_options:
+    board_upload.flash_size: 16MB
+    board_upload.maximum_size: 16777216
+    board_upload.ram_size: 8MB
+    board_upload.maximum_ram_size: 8388608
+    board_build.partitions: "default_16MB.csv"
+  on_boot:
+    priority: 600
+    then:
+      - switch.turn_off: ${device}_gled1
+      - switch.turn_off: ${device}_gled2
+      - switch.turn_off: ${device}_gled3
+      - switch.turn_off: ${device}_rled
+      - switch.turn_off: ${device}_pump
+      - switch.turn_off: ${device}_flush_walve
+      - switch.turn_off: ${device}_input_walve
+#-------------------------Параметры WiFi------------------------#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret wc_control_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+#-----------------------Параметры логгера-----------------------#
+logger:
+#  baud_rate: 0
+web_server:
+  port: 80
+#-------------------------Параметры API-------------------------#
+api:
+  encryption:
+    key: !secret wc_control_api
+  reboot_timeout: 0s
+#-------------------------Параметры OTA-------------------------#
+ota:
+  password: !secret wc_control_ota   
+#-----------------------Параметры DS18B20-----------------------#
+dallas:
+  - pin: GPIO27
+    id: dallas_wire_1
+    update_interval: ${update}
+  - pin: GPIO13
+    id: dallas_wire_2
+    update_interval: ${update}
+#-------------------------Параметры I2C-------------------------#    
+i2c:
+  sda: 22
+  scl: 23
+  scan: true
+#-----------------Параметры расширителей портов-----------------#
+pcf8574:
+  - id: 'pcf8574_1'
+    address: 0x21
+    pcf8575: false
+  - id: 'pcf8574_2'
+    address: 0x24
+    pcf8575: false
+
+#============================Скрипты============================#
+script:
+#---------------------Скрипт отсутствия воды--------------------#
+  - id: ${device}_no_water_script
+    then:
+      - text_sensor.template.publish:
+          id: ${device}_work_mode
+          state: "NO WATER"
+      - script.wait: ${device}_water_set_script
+      - script.wait: ${device}_full_tank_script
+      - script.stop: ${device}_flush_script
+      - switch.turn_off: ${device}_gled1
+      - switch.turn_off: ${device}_gled2
+      - switch.turn_off: ${device}_gled3
+      - switch.turn_off: ${device}_pump
+      - switch.turn_off: ${device}_flush_walve
+      - switch.turn_off: ${device}_input_walve
+#-----------------------Скрипт набора воды----------------------#
+  - id: ${device}_water_set_script
+    then:
+      - wait_until:
+          lambda: |-
+            if (id(${device}_source_sensor).state)
+            { return true; }
+            else
+            { return false; }
+      - text_sensor.template.publish:
+          id: ${device}_work_mode
+          state: "WATER SET"
+      - script.stop: ${device}_full_tank_script
+      - switch.turn_on: ${device}_gled2
+      - switch.turn_on: ${device}_pump
+      - switch.turn_on: ${device}_input_walve
+      - switch.turn_off: ${device}_flush_walve
+      - switch.turn_off: ${device}_gled1
+      - switch.turn_off: ${device}_gled3
+#-----------------------Скрипт полного бака---------------------#
+  - id: ${device}_full_tank_script
+    then:
+      - wait_until:
+          lambda: |-
+            if (id(${device}_source_sensor).state)
+            { return true; }
+            else
+            { return false; }
+      - text_sensor.template.publish:
+          id: ${device}_work_mode
+          state: "FULL TANK"
+      - script.stop: ${device}_water_set_script
+      - switch.turn_on: ${device}_gled3
+      - switch.turn_off: ${device}_pump
+      - switch.turn_off: ${device}_input_walve
+      - switch.turn_off: ${device}_flush_walve
+      - switch.turn_off: ${device}_gled1
+      - switch.turn_off: ${device}_gled2
+#--------------------Скрипт промывки мембраны-------------------#
+  - id: ${device}_flush_script
+    then:
+      - wait_until:
+          lambda: |-
+            if (id(${device}_source_sensor).state)
+            { return true; }
+            else
+            { return false; }
+      - text_sensor.template.publish:
+          id: ${device}_work_mode
+          state: "FLUSH"
+      - script.wait: ${device}_water_set_script
+      - script.wait: ${device}_full_tank_script
+      - switch.turn_on: ${device}_gled1
+      - switch.turn_on: ${device}_pump
+      - switch.turn_on: ${device}_input_walve
+      - switch.turn_on: ${device}_flush_walve
+      - switch.turn_off: ${device}_gled2
+      - switch.turn_off: ${device}_gled3
+      - delay: 10s
+      - lambda: |-
+          if (id(${device}_water_set_script).is_running())
+          { (id(${device}_full_tank_script).execute()); }
+          else
+          { (id(${device}_water_set_script).execute()); }
+      - script.stop: ${device}_flush_script
+
+#============================Сенсоры============================#
+sensor:
+#---------------------Мощность сигнала WiFi---------------------#
+  - platform: wifi_signal
+    name: "${up_device} WiFi signal"
+    id: ${device}_wifi
+    update_interval: ${update}
+    icon: mdi:wifi-strength-2
+#-------------------Конвертация времени работы------------------#
+  - platform: uptime
+    id: ${device}_uptime
+    internal: true
+    update_interval: ${update}
+    on_raw_value:
+      then:
+        - text_sensor.template.publish:
+            id: ${device}_uptime_text
+            state: !lambda |-
+              int seconds = round(id(${device}_uptime).raw_state);
+              int days = seconds / (24 * 3600);
+              seconds = seconds % (24 * 3600);
+              int hours = seconds / 3600;
+              seconds = seconds % 3600;
+              int minutes = seconds /  60;
+              seconds = seconds % 60;
+              return (
+                (days ? String(days) + "д " : "") +
+                (hours ? String(hours) + "ч " : "") +
+                (minutes ? String(minutes) + "м " : "") +
+                (String(seconds) + "с")
+              ).c_str();
+#----------------------------DS18B20----------------------------#
+  - platform: dallas
+    dallas_id: dallas_wire_1
+    address: 0xeba2c66d0e64ff28
+    id: ${device}_temp_1
+    name: "${up_device} temperature 1"
+    device_class: "temperature"
+  - platform: dallas
+    dallas_id: dallas_wire_1
+    address: 0x5d86d96d0e64ff28
+    id: ${device}_temp_2
+    name: "${up_device} temperature 2"
+    device_class: "temperature"
+#  - platform: dallas
+#    dallas_id: dallas_wire_2
+#    address: 
+#    id: ${device}_filter_temp
+#    name: "${up_device} hot water"
+#    internal: true 
+#    device_class: "temperature"
+#  - platform: dallas
+#    dallas_id: dallas_wire_2
+#    address: 
+#    id: ${device}_hot_water
+#    name: "${up_device} hot water"
+#    device_class: "temperature"
+#  - platform: dallas
+#    dallas_id: dallas_wire_2
+#    address: 
+#    id: ${device}_cold_water
+#    name: "${up_device} cold water"
+#    device_class: "temperature"
+#----------------------------TDS ADC----------------------------#
+  - platform: adc
+    id: ${device}_tds_adc_1
+    name: "${up_device} TDS ADC 1"
+    pin: GPIO32
+#    internal: true
+    update_interval: 5s
+  - platform: adc
+    id: ${device}_tds_adc_2
+    name: "${up_device} TDS ADC 2"
+    pin: GPIO33
+#    internal: true
+    update_interval: 5s
+#-------------Пересчет напряжения TDS по температуре------------#
+  - platform: template
+    id: ${device}_tds_vcomp_1
+    name: "${up_device} TDS Vcomp 1"
+    unit_of_measurement: 'V'
+    accuracy_decimals: 3
+    lambda: |-
+        return ((id(${device}_tds_adc_1).state) /
+        (1 + (0.02 * ((id(${device}_temp_1).state) - 25.0))));
+#    internal: true
+    update_interval: 5s
+  - platform: template
+    id: ${device}_tds_vcomp_2
+    name: "${up_device} TDS Vcomp 2"
+    unit_of_measurement: 'V'
+    accuracy_decimals: 3
+    lambda: |-
+        return ((id(${device}_tds_adc_2).state) /
+        (1 + (0.02 * ((id(${device}_temp_2).state) - 25.0))));
+#    internal: true
+    update_interval: 5s
+#------------------Пересчет TDS по температуре------------------#
+  - platform: template
+    id: ${device}_tds_1
+    name: "${up_device} TDS 1"
+    icon: "hass:water-opacity"
+    unit_of_measurement: 'ppm'
+    accuracy_decimals: 0
+    lambda: |-
+        return (133.42*(id(${device}_tds_vcomp_1).state) *
+        (id(${device}_tds_vcomp_1).state) *
+        (id(${device}_tds_vcomp_1).state) -
+        255.86 * (id(${device}_tds_vcomp_1).state) *
+        (id(${device}_tds_vcomp_1).state) + 
+        857.39 * (id(${device}_tds_vcomp_1).state)) * 0.5;
+    update_interval: 5s
+  - platform: template
+    id: ${device}_tds_2
+    name: "${up_device} TDS 2"
+    icon: "hass:water-opacity"
+    unit_of_measurement: 'ppm'
+    accuracy_decimals: 0
+    lambda: |-
+        return (133.42*(id(${device}_tds_vcomp_2).state) *
+        (id(${device}_tds_vcomp_2).state) *
+        (id(${device}_tds_vcomp_2).state) -
+        255.86 * (id(${device}_tds_vcomp_2).state) *
+        (id(${device}_tds_vcomp_2).state) + 
+        857.39 * (id(${device}_tds_vcomp_2).state)) * 0.5;
+    update_interval: 5s
+#--------------------Датчик потока сырой воды-------------------#
+  - platform: pulse_counter
+    id: ${device}_raw_water
+    name: "${up_device} RAW water"
+    pin: GPIO18
+    unit_of_measurement: 'л'
+    filters:  # !!!!!ОБЯЗАТЕЛЬНО СКОРРЕКТИРОВАТЬ!!!!! #
+      - lambda: |-
+          static float raw_water = 0.0;
+          raw_water  = x * 0.25 / 2145;  
+          return raw_water;
+    update_interval: 15s
+#------------------Датчик потока питьевой воды------------------#
+  - platform: pulse_counter
+    id: ${device}_drink_water
+    name: "${up_device} DRINK water"
+    pin: GPIO19
+    unit_of_measurement: 'л'
+    filters: # !!!!!ОБЯЗАТЕЛЬНО СКОРРЕКТИРОВАТЬ!!!!! #
+      - lambda: |-
+          static float drink_water = 0.0;
+          drink_water  = x * 0.25 / 2145;
+          return drink_water;
+    update_interval: 15s
+
+#===========================Светодиоды==========================#
+light:
+#-----------------------Светодиод статуса-----------------------#
+  - platform: status_led
+    id: ${device}_status_led
+    pin:
+      pcf8574: pcf8574_1
+      number: 4
+      inverted: false
+      mode:
+        output: true
+    internal: true
+
+#=========================Переключатели=========================#
+switch:
+#----------------------Зеленый светодиод 1----------------------#
+  - platform: gpio
+    id: ${device}_gled1
+    name: "PCF8574 GLED1"
+    pin:
+      pcf8574: pcf8574_1
+      number: 3
+      mode:
+        output: true
+      inverted: false
+#    internal: true
+#----------------------Зеленый светодиод 2----------------------#
+  - platform: gpio
+    id: ${device}_gled2
+    name: "PCF8574 GLED2"
+    pin:
+      pcf8574: pcf8574_1
+      number: 2
+      mode:
+        output: true
+      inverted: false
+#    internal: true
+#----------------------Зеленый светодиод 3----------------------#
+  - platform: gpio
+    id: ${device}_gled3
+    name: "PCF8574 GLED3"
+    pin:
+      pcf8574: pcf8574_1
+      number: 1
+      mode:
+        output: true
+      inverted: false
+#    internal: true
+#-----------------------Красный светодиод-----------------------#
+  - platform: gpio
+    id: ${device}_rled
+    name: "PCF8574 RLED"
+    pin:
+      pcf8574: pcf8574_1
+      number: 0
+      mode:
+        output: true
+      inverted: false
+#    internal: true
+#------------SAURES кнопка передачи данных на сервер------------#
+  - platform: gpio
+    id: ${device}_saures_serv
+    pin:
+      number: GPIO26
+#    internal: true
+#--------------------SAURES кнопка настройки--------------------#
+  - platform: gpio
+    id: ${device}_saures_set
+    pin:
+      number: GPIO25
+#    internal: true
+#------------------------Включение помпы------------------------#
+  - platform: gpio
+    id: ${device}_pump
+    name: "MOSFET 1"
+    pin: 
+      pcf8574: pcf8574_2
+      number: 2
+      mode:
+        output: true
+      inverted: true
+#-------------------Включение входного клапана------------------#
+  - platform: gpio
+    id: ${device}_input_walve
+    name: "MOSFET 2"
+    pin:
+      pcf8574: pcf8574_2
+      number: 1
+      mode:
+        output: true
+      inverted: true
+#-------------------Включение клапана промывки------------------#
+  - platform: gpio
+    id: ${device}_flush_walve
+    name: "MOSFET 3"
+    pin:
+      pcf8574: pcf8574_2
+      number: 0
+      mode:
+        output: true
+      inverted: true
+
+#=======================Текстовые сенсоры=======================#
+text_sensor:
+#--------------------------Время работы-------------------------#
+  - platform: template
+    name: "${up_device} uptime"
+    id: ${device}_uptime_text
+    icon: mdi:clock-plus-outline
+#-----------------------Информация о сети-----------------------#    
+  - platform: wifi_info
+    ip_address:
+      name: "${up_device} IP"
+      icon: mdi:ip
+    bssid:
+      name: "${up_device} BSSID"
+      icon: mdi:link
+
+  - platform: template
+    name: "${up_device} WORK MODE"
+    id: ${device}_work_mode
+
+#========================Бинарные сенсоры=======================#
+binary_sensor:
+#-----------------------Статус подключения----------------------#
+  - platform: status
+    name: "${up_device} status"
+    id: ${device}_status
+#------------------Датчик наличия воды на входе-----------------#
+  - platform: gpio
+    id: ${device}_source_sensor
+    name: "SOURCE SENSOR"
+    pin:
+      pcf8574: pcf8574_2
+      number: 7
+      mode:
+        input: true
+      inverted: true
+    publish_initial_state: true
+    filters:
+      - delayed_on: 1s
+      - delayed_off: 1s
+    on_press:
+      - then:
+        - script.stop: ${device}_no_water_script
+        - switch.turn_off: ${device}_rled
+        - lambda: |-
+            if (id(${device}_water_set_script).is_running())
+            { (id(${device}_water_set_script).stop());
+              (id(${device}_water_set_script).execute()); }
+            else
+            { (id(${device}_full_tank_script).stop());
+              (id(${device}_full_tank_script).execute()); }
+    on_release:
+      - then:
+        - script.execute: ${device}_no_water_script
+        - switch.turn_on: ${device}_rled
+    icon: mdi:water-pump
+#-----------------------Датчик воды в баке----------------------#
+  - platform: gpio
+    id: ${device}_tank_sensor
+    name: "TANK SENSOR"
+    pin:
+      pcf8574: pcf8574_2
+      number: 6
+      mode:
+        input: true
+      inverted: true
+    publish_initial_state: true
+    filters:
+      - delayed_on: 1s
+      - delayed_off: 1s
+    on_press:
+      then:
+        - wait_until:
+            lambda: |-
+              if (id(${device}_flush_script).is_running())
+              { return false; }
+              else
+              { return true; }
+        - script.execute: ${device}_water_set_script
+    on_release:
+      then:
+        - wait_until:
+            lambda: |-
+              if (id(${device}_flush_script).is_running())
+              { return false; }
+              else
+              { return true; }
+        - script.execute: ${device}_full_tank_script
+    icon: mdi:storage-tank-outline
+
+#=============================Кнопки============================#
+button:
+#---------------------Удаленный рестарт ESP---------------------#
+  - platform: restart
+    id: ${device}_restart
+    name: "${up_device} restart"
+    icon: "mdi:restart"
+#------------Saures кнопка передачи данных на сервер------------#
+  - platform: template
+    id: ${device}_saures_server
+    name: "${up_device} SAURES SERVER"
+    on_press:
+      then:
+        - switch.turn_on: ${device}_saures_serv
+        - delay: 5s
+        - switch.turn_off: ${device}_saures_serv
+    icon: mdi:share-all-outline
+#------------Saures кнопка перевода в режим настройки-----------#
+  - platform: template
+    id: ${device}_saures_settings
+    name: "${up_device} SAURES SETTINGS"
+    on_press:
+      then:
+        - switch.turn_on: ${device}_saures_set
+        - delay: 10s
+        - switch.turn_off: ${device}_saures_set
+    icon: mdi:file-cog-outline
+#-----------------Кнопка запуска режима промывки----------------#
+  - platform: template
+    id: ${device}_flush_button
+    name: "${up_device} FLUSH START"
+    on_press:
+      then:
+        - script.execute: ${device}_flush_script
+    icon: mdi:shower-head
