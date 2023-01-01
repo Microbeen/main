@@ -261,7 +261,7 @@ sensor:
   - platform: template
     id: ${device}_tds_1
     name: "${up_device} TDS 1"
-    icon: "hass:water-opacity"
+    icon: mdi:water-opacity
     unit_of_measurement: 'ppm'
     accuracy_decimals: 0
     lambda: |-
@@ -275,7 +275,7 @@ sensor:
   - platform: template
     id: ${device}_tds_2
     name: "${up_device} TDS 2"
-    icon: "hass:water-opacity"
+    icon: mdi:water-opacity
     unit_of_measurement: 'ppm'
     accuracy_decimals: 0
     lambda: |-
