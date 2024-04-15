@@ -1,0 +1,157 @@
+#========================== Подстановка имен =========================#
+substitutions:
+  devicename: kitchen-uzo
+  device: kitchen_uzo
+  update: 60s
+
+#============================== Тип ESP ==============================#
+esp8266:
+  board: esp8285
+
+#========================= Параметры прошивки ========================#
+esphome:
+  name: ${devicename}
+  project:
+    name: "TO-Q-SR116JWE.PSF-B85"
+    version: "0.4.7"
+  on_boot:
+    priority: 600
+    then:
+      - switch.turn_on: ${device}_relay
+  build_path: /config/esphome/build/kitchen_uzo
+
+#=========================== Параметры WiFi ==========================#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret kitc_uzo_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+
+#========================= Параметры логгера =========================#
+logger:
+  baud_rate: 0
+
+#=========================== Параметры API ===========================#
+api:
+  encryption:
+    key: !secret kitc_uzo_api
+  reboot_timeout: 0s
+
+#=========================== Параметры OTA ===========================#
+ota:
+  password: !secret kitc_uzo_ota
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#=========================== Параметры UART ==========================#
+uart:
+  rx_pin: 3
+  baud_rate: 4800
+
+#============================== Сенсоры ==============================#
+sensor:
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#----------------- Датчики энергомониторинга CSE7766 -----------------#
+  - platform: cse7766
+#............................. Сила тока .............................#
+    current:
+      id: ${device}_current
+      name: "${devicename} Amperage"
+      unit_of_measurement: "A"
+      filters:
+        - throttle: 60s
+      icon: mdi:alpha-a-circle-outline
+      device_class: "current"
+#............................. Напряжение ............................#
+    voltage:
+      id: ${device}_voltage
+      name: "${devicename} Voltage"
+      unit_of_measurement: "V"
+      filters:
+        - throttle: 60s
+      icon: mdi:alpha-v-circle-outline
+      device_class: "voltage"
+#.............................. Мощность .............................#
+    power:
+      id: ${device}_power
+      name: "${devicename} Power"
+      unit_of_measurement: "W"
+      filters:
+        - throttle: 60s
+      icon: mdi:home-lightning-bolt-outline
+      device_class: "power"
+#.................. Общее потребления электроэнергии .................#
+    energy:
+      id: ${device}_energy
+      name: "${devicename} Energy"
+      unit_of_measurement: "Wh"
+      filters:
+        - throttle: 60s
+      icon: mdi:sigma
+      device_class: "energy"
+
+#=========================== Переключатели ===========================#
+switch:
+#---------------------------- Силовое реле ---------------------------#
+  - platform: gpio
+    id: ${device}_relay
+    name: "${devicename} Main switch"
+    pin:
+      number: 12
+      inverted: false
+#-------------------- Светодиод подключения к WiFi -------------------#
+  - platform: gpio
+    id: ${device}_led
+    internal: true
+    pin:
+      number: 13
+      inverted: true
+
+#========================= Текстовые сенсоры =========================#
+text_sensor:
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+    on_value:
+      if:
+        condition:
+          wifi.connected:
+        then:
+          - switch.turn_on: ${device}_led
+        else:
+          - switch.turn_off: ${device}_led
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+
+#========================== Бинарные сенсоры =========================#
+binary_sensor:
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+#----------------------- Кнопка включения реле -----------------------#
+  - platform: gpio
+    id: ${device}_button
+    name: "${devicename} Switch button" 
+    pin:
+      number: 0
+      inverted: true
+      mode: INPUT_PULLUP
+    filters:
+      - delayed_on: 1s
+      - delayed_off: 1s
+    on_press:
+      then:
+      - switch.toggle: ${device}_relay
+
+#=============================== Кнопки ==============================#
+button:
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
