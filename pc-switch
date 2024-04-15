@@ -1,0 +1,200 @@
+#========================== Подстановка имен =========================#
+substitutions:
+  devicename: pc-switch
+  device: pc_switch
+  update: 60s
+
+#============================== Тип ESP ==============================#
+esp8266:
+  board: esp01_1m
+
+#========================= Параметры прошивки ========================#
+esphome:
+  name: ${devicename}
+  project:
+    name: "Espressif.Esp8266-12s"
+    version: "2.6.2"
+  build_path: /config/esphome/build/pc_switch
+#------------------------- Внешние библиотеки ------------------------#
+external_components:
+  - source: github://dentra/esphome-components
+
+#=========================== Параметры WiFi ==========================#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret pc_switch_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+
+#========================= Параметры логгера =========================#
+logger:
+  baud_rate: 0
+
+#=========================== Параметры API ===========================#
+api:
+  encryption:
+    key: !secret pc_switch_api
+  reboot_timeout: 0s
+
+#=========================== Параметры OTA ===========================#
+ota:
+  password: !secret pc_switch_ota
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#=========================== Параметры UART ==========================#
+uart:
+  rx_pin: 3
+  tx_pin: 1
+  baud_rate: 9600
+
+#========================= Параметры Tuya MCU ========================#
+tuya:
+
+#============================== Сенсоры ==============================#
+sensor:
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#---------------------------- Датчики TUYA ---------------------------#
+#............................ Температура ............................#
+  - platform: "tuya"
+    id: ${device}_MB_temp
+    name: "${devicename} Board t°"
+    sensor_datapoint: 105
+    accuracy_decimals: 0
+    unit_of_measurement: "°C"
+    filters:
+    - throttle: 60s
+    - lambda: !lambda |-
+        if (x > 100) return {};
+        return x;
+    icon: mdi:thermometer-auto    
+    device_class: "temperature"
+#.................... Датчик оборотов вентилятора ....................#
+  - platform: "tuya"
+    id: ${device}_MB_fan
+    name: "${devicename} Fan speed"
+    sensor_datapoint: 106
+    accuracy_decimals: 0
+    unit_of_measurement: "rpm"
+    filters:
+    - multiply: 60
+    - throttle: 60s
+    - lambda: !lambda |-
+        if (x < 100) return 0;
+        else return x;
+    on_raw_value:
+      then:
+      - text_sensor.template.publish:
+          id: ${device}_pc_status
+          state: !lambda |-
+            if (id(${device}_MB_fan).state > 500) {
+              return "ON"; 
+            } else {
+              return "OFF"; }
+    icon: mdi:fan-auto
+#............................. ХРЕН ЗНАЕТ ЧТО ........................#
+#  - platform: "tuya"
+#    id: ${device}_data_107
+#    name: "${up_device} data 107"
+#    sensor_datapoint: 107
+#    icon: mdi:sigma
+#    device_class: "energy"
+#    state_class: total_increasing
+#  - platform: "tuya"
+#    id: ${device}_data_108
+#    name: "${up_device} data 108"
+#    sensor_datapoint: 108
+#    icon: mdi:sigma
+#    device_class: "energy"
+#    state_class: total_increasing
+
+#========================== Источники света ==========================#
+light:
+#------------------------- Светодиод статуса -------------------------#
+  - platform: status_led
+    id: ${device}_led
+    pin:
+      number: 2
+    internal: true
+
+#=========================== Переключатели ===========================#
+switch:
+#------------------ Включение/выключение компьютера ------------------#
+  - platform: "tuya"
+    id: ${device}_MB_power_sw
+    switch_datapoint: 104
+    internal: true
+#---------------- Принудительное выключение компьютера ---------------#
+  - platform: "tuya"
+    id: ${device}_MB_force_power_sw
+    switch_datapoint: 102
+    internal: true
+#---------------------- Перезагрузка компьютера ----------------------#
+  - platform: "tuya"
+    id: ${device}_MB_reset_sw
+    name: ${device}_MB_reset_sw
+    switch_datapoint: 1
+    internal: true
+#----------------- Блокировка кнопок системного блока ----------------#
+  - platform: "tuya"
+    id: ${device}_btn_lock
+    name: "${devicename} Lock button"
+    switch_datapoint: 103
+    icon: mdi:lock-check
+
+#========================= Текстовые сенсоры =========================#
+text_sensor:
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+#---------------------- Статус работы компьютера ---------------------#
+  - platform: template
+    id: ${device}_pc_status
+    name: "${devicename} PC status"
+    update_interval: ${update}
+    icon: mdi:desktop-classic
+
+#========================== Бинарные сенсоры =========================#
+binary_sensor:
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+
+#=============================== Кнопки ==============================#
+button:
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
+#------------------ Включение/выключение компьютера ------------------#
+  - platform: template
+    id: ${device}_MB_power
+    name: "${devicename} PC power ON/OFF"
+    on_press:
+      then:
+        - switch.turn_on: ${device}_MB_power_sw     
+    icon: mdi:power
+#---------------- Принудительное выключение компьютера ---------------#
+#  - platform: template
+#    id: ${device}_MB_force_power
+#    name: "${up_device} force power"
+#    on_press:
+#      then:
+#        - switch.turn_on: ${device}_MB_force_power_sw
+#    icon: mdi:power-cycle
+#---------------------- Перезагрузка компьютера ----------------------#
+  - platform: template
+    id: ${device}_MB_reset
+    name: "${devicename} PC reset"
+    on_press:
+      then:
+        - switch.turn_on: ${device}_MB_reset_sw
+    icon: mdi:refresh-auto
