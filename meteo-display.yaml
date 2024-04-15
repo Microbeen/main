@@ -1,28 +1,35 @@
-#------------------------Подстановка имен-----------------------#
+#========================== Подстановка имен =========================#
 substitutions:
   devicename: meteo-display
   device: met_disp
-  up_device: MetDisp
-  board: esp32dev
-  framework: arduino
+  ha_sensor: ha_sensor
   update: 60s
-#-------------------------Тип платы ESP-------------------------#
+
+#============================== Тип ESP ==============================#
 esp32:
-  board: $board
+  board: esp32dev
+  flash_size: 16MB
   framework:
-    type: $framework
-#-------------------------Имя платы ESP-------------------------#
+    type: esp-idf
+
+#========================= Параметры прошивки ========================#
 esphome:
   name: ${devicename}
   project:
     name: "Lilygo.TTGO T-Display"
     version: "1.8.1"
+  platformio_options:
+    board_upload.maximum_size: 16777216
+    board_upload.ram_size: 520kB
+    board_upload.maximum_ram_size: 532480
   on_boot:
     then:
       - output.set_level:
           id: ${device}_pwm
           level: 10%
-#-------------------------Параметры WiFi------------------------#
+  build_path: /config/esphome/build/meteo_display
+
+#=========================== Параметры WiFi ==========================#
 wifi:
   ssid: !secret ssid
   password: !secret pass
@@ -30,350 +37,355 @@ wifi:
     static_ip: !secret met_disp_ip
     gateway: 192.168.1.1
     subnet: 255.255.255.0
-  fast_connect: true    
-#-----------------------Параметры логгера-----------------------#
+  fast_connect: true
+
+#========================= Параметры логгера =========================#
 logger:
   baud_rate: 0
-#-------------------------Параметры API-------------------------#
+
+#=========================== Параметры API ===========================#
 api:
   encryption:
     key: !secret met_disp_api
-#-------------------------Параметры OTA-------------------------#
+
+#=========================== Параметры OTA ===========================#
 ota:
   password: !secret met_disp_ota
-#-----------------------Настройка шины i2c----------------------#
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#=========================== Параметры I2C ===========================#
 i2c:
   sda: 21
   scl: 22
   id: i2c_bus
-#-----------------------Настройка шины SPI----------------------#  
+
+#=========================== Параметры SPI ===========================#
 spi:
-  clk_pin: GPIO18
-  mosi_pin: GPIO19
-#-------------------Параметры ШИМ-контроллера-------------------#
+  clk_pin: 18
+  mosi_pin: 19
+
+#==================== Настройка выхода ШИМ-сигнала ===================#
 output:
   - platform: ledc
-    pin: GPIO4
+    id: ${device}_pwm
+    pin: 4
     frequency: 20000 Hz
-    id: ${device}_pwm  
-#-----------Синхронизация времени через HomeAssistant-----------#
+
+#============= Синхронизация времени через HomeAssistant =============#
 time:
   - platform: homeassistant
-    id: esptime
+    id: ${device}_esptime
 
-#============================Сенсоры============================#
+#============= Переключение страниц дисплея по интервалу =============#
+interval:
+  - interval: 3s
+    then:
+      - display.page.show_next: ${device}_display
+      - component.update: ${device}_display
+
+#============================== Сенсоры ==============================#
 sensor:
-#---------------------Мощность сигнала WiFi---------------------#
-  - platform: wifi_signal
-    name: "${up_device} WiFi signal"
-    id: ${device}_wifi 
-    update_interval: ${update}
-    icon: mdi:wifi-strength-2
-    device_class: "signal_strength"
-#-------------------Конвертация времени работы------------------#
-  - platform: uptime
-    id: ${device}_uptime
-    internal: true
-    update_interval: ${update}
-    on_raw_value:
-      then:
-        - text_sensor.template.publish:
-            id: ${device}_uptime_text
-            state: !lambda |-
-              int seconds = round(id(${device}_uptime).raw_state);
-              int days = seconds / (24 * 3600);
-              seconds = seconds % (24 * 3600);
-              int hours = seconds / 3600;
-              seconds = seconds % 3600;
-              int minutes = seconds /  60;
-              seconds = seconds % 60;
-              return (
-                (days ? String(days) + "д " : "") +
-                (hours ? String(hours) + "ч " : "") +
-                (minutes ? String(minutes) + "м " : "") +
-                (String(seconds) + "с")
-              ).c_str();
-#----------------------Датчик освещенности----------------------#
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#----------------- Датчик освещенности (фоторезистор) ----------------#
+#......................... Настройка пина ADC ........................#
   - platform: adc
     id: ${device}_light_sensor
     pin: 39
     update_interval: 30s
     internal: true
+#......................... Настройка датчика .........................#
   - platform: resistance
+    id: ${device}_light
     sensor: ${device}_light_sensor
     configuration: UPSTREAM
     resistor: 10kOhm
-    id: ${device}_light
-    internal: true
     filters:
       - lambda: return x/1000;
+    internal: true
     on_value_range:
         - above: 22
           then:
-          - component.update: ${device}_disp
+          - component.update: ${device}_display
           - output.set_level:
               id: ${device}_pwm
               level: 100%
         - below: 22
           then:
-          - component.update: ${device}_disp
+          - component.update: ${device}_display
           - output.set_level:
               id: ${device}_pwm
               level: 10%
-#-----------------Датчики температуры и давления----------------#
+#--------------------------- Датчик BMP280 ---------------------------#
+#............................ Температура ............................#
   - platform: bmp280
     address: 0x76
-    update_interval: ${update}
     temperature:
-      name: "${up_device} temp"
       id: ${device}_temp
+      name: "${devicename} Temperature"
       oversampling: 16x
       device_class: "temperature"
+#.............................. Давление .............................#
     pressure:
-      name: "${up_device} press"
       id: ${device}_press
+      name: "${devicename} Pressure"
       unit_of_measurement: mmHg
       filters:
       - multiply: 0.75
       device_class: "pressure"
-#--------------------Датчики уличного сенсора-------------------#
+      icon: mdi:gauge
+    update_interval: ${update}
+#---------------------- Датчики уличного сенсора ---------------------#
+#............................ Температура ............................#
   - platform: homeassistant
-    id: metsens_temperature
+    id: ${ha_sensor}_temp
     entity_id: sensor.metsens_temperature
     accuracy_decimals: 1
     internal: true
+#............................. Влажность .............................#
   - platform: homeassistant
-    id: metsens_humidity
+    id: ${ha_sensor}_humi
     entity_id: sensor.metsens_humidity
     accuracy_decimals: 1
     internal: true
+#................................ CO2 ................................#
   - platform: homeassistant
-    id: metsens_co2
+    id: ${ha_sensor}_co2
     entity_id: sensor.metsens_co2
     accuracy_decimals: 0
     internal: true
+#............................... PM2.5 ...............................#
   - platform: homeassistant
-    id: metsens_pm2_5
+    id: ${ha_sensor}_pm25
     entity_id: sensor.metsens_pm2_5
     accuracy_decimals: 0
     internal: true
+#................................ PM10 ...............................#
   - platform: homeassistant
-    id: metsens_pm10
+    id: ${ha_sensor}_pm10
     entity_id: sensor.metsens_pm10
     accuracy_decimals: 0
     internal: true
+#................................ tVOC ...............................#
   - platform: homeassistant
-    id: metsens_tvoc
+    id: ${ha_sensor}_tvoc
     entity_id: sensor.metsens_tvoc
     accuracy_decimals: 0
     internal: true
+#............................ Formaldehyde ...........................#
   - platform: homeassistant
-    id: metsens_formaldehyde
+    id: ${ha_sensor}_form
     entity_id: sensor.metsens_formaldehyde
     accuracy_decimals: 0
     internal: true
+#............................... Light ...............................#
   - platform: homeassistant
-    id: metsens_light
+    id: ${ha_sensor}_light
     entity_id: sensor.metsens_light
     internal: true
+#................................. UV ................................#
   - platform: homeassistant
-    id: metsens_uv
+    id: ${ha_sensor}_uv
     entity_id: sensor.metsens_uv
     internal: true
+#............................. Radiation .............................#
   - platform: homeassistant
-    id: metsens_static_intensity
+    id: ${ha_sensor}_stat
     entity_id: sensor.metsens_static_intensity
     accuracy_decimals: 1
     internal: true
+#............................ Rain sensor ............................#
 #  - platform: homeassistant
-#    id: metsens_rain
+#    id: ${ha_sensor}_rain
 #    entity_id: sensor.metsens_rain
 #    internal: true
+#........................... Storm distance ..........................#
 #  - platform: homeassistant
-#    id: metsens_storm_distance
+#    id: ${ha_sensor}_storm
 #    entity_id: sensor.metsens_storm_distance
-#    internal: true    
+#    internal: true
+#.......................... Lightning energy .........................#
 #  - platform: homeassistant
-#    id: metsens_lightning_energy
+#    id: ${ha_sensor}_energ
 #    entity_id: sensor.metsens_lightning_energy
-#    internal: true  
+#    internal: true
+#---------------- ESP32 внутренний датчик температуры ----------------#
+  - platform: internal_temperature
+    id: ${device}_int_temp
+    name: "${devicename} ESP t°"
+    device_class: "temperature"
 
-
-interval:
-  - interval: 3s
-    then:
-      - display.page.show_next: ${device}_disp
-      - component.update: ${device}_disp
-
-#=======================Текстовые сенсоры=======================#
+#========================= Текстовые сенсоры =========================#
 text_sensor:
-#--------------------------Время работы-------------------------#
-  - platform: template
-    name: "${up_device} uptime"
-    id: ${device}_uptime_text
-    icon: mdi:clock-plus-outline
-    
-#========================Бинарные сенсоры=======================#
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+
+#========================== Бинарные сенсоры =========================#
 binary_sensor:
-#-----------------------Статус подключения----------------------#
-  - platform: status
-    name: "${up_device} status"
-    id: ${device}_status 
-#--------------Кнопка переключения страниц "НАЗАД"--------------#
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+#---------------- Кнопка переключения страниц "НАЗАД" ----------------#
   - platform: gpio
     pin:
-      number: GPIO0
+      number: 0
       inverted: true
       mode: INPUT_PULLUP
     id: ${device}_btn_1
     on_press:
       then:
-      - display.page.show_next: ${device}_disp
-      - component.update: ${device}_disp
-#--------------Кнопка переключения страниц "ВПЕРЕД"-------------#
+      - display.page.show_next: ${device}_display
+      - component.update: ${device}_display
+#---------------- Кнопка переключения страниц "ВПЕРЕД" ---------------#
   - platform: gpio
     pin:
-      number: GPIO35
+      number: 35
       inverted: true
     id: ${device}_btn_2
     icon: mdi:arrow-right-bold-circle-outline
     on_press:
       then:
-      - display.page.show_previous: ${device}_disp
-      - component.update: ${device}_disp
+      - display.page.show_previous: ${device}_display
+      - component.update: ${device}_display
 
-#=========================Переключатели=========================#
-switch:
-#---------------------Удаленный рестарт ESP---------------------#
-  - platform: restart
-    id: ${device}_restart
-    name: "${up_device} restart"
-    icon: "mdi:restart"
-
-#=======================Виртуальные кнопки======================#
+#=============================== Кнопки ==============================#
 button:
-#--------------Кнопка переключения страниц "НАЗАД"--------------#
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
+#---------------- Кнопка переключения страниц "НАЗАД" ----------------#
   - platform: template
-    name: "${up_device} left button"
+    name: "${devicename} Left button"
     id: ${device}_l_btn
+    on_press:
+      then:
+      - display.page.show_next: ${device}_display
+      - component.update: ${device}_display
     icon: mdi:arrow-left-bold-circle-outline
-    on_press:
-      then:
-      - display.page.show_next: ${device}_disp
-      - component.update: ${device}_disp
-#--------------Кнопка переключения страниц "ВПЕРЕД"-------------#
+#---------------- Кнопка переключения страниц "ВПЕРЕД" ---------------#
   - platform: template
-    name: "${up_device} right button"
+    name: "${devicename} Right button"
     id: ${device}_r_btn
-    icon: mdi:arrow-right-bold-circle-outline
     on_press:
       then:
-      - display.page.show_previous: ${device}_disp
-      - component.update: ${device}_disp     
+      - display.page.show_previous: ${device}_display
+      - component.update: ${device}_display
+    icon: mdi:arrow-right-bold-circle-outline
 
-#===================Настройка вывода на экран===================#
-#--------------------Настройка цветов текста--------------------#
+#================== Дисплей / настройка цвета текста =================#
 color:
+#------------------------------ Красный ------------------------------#
   - id: red_color
-    red: 100%
-    green: 0%
-    blue: 0%
-  - id: red_color_1
-    red: 86%
-    green: 43%
-    blue: 45%
+    hex: 'FF0000'
+#------------------------------- Желтый ------------------------------#
   - id: yellow_color
-    red: 100%
-    green: 100%
-    blue: 0%
+    hex: 'FFFF00'
+#.----------------------------- Зеленый ------------------------------#
   - id: green_color
-    red: 0%
-    green: 100%
-    blue: 0%
+    hex: '008000'
+#------------------------------- Синий -------------------------------#
   - id: blue_color
-    red: 0%
-    green: 0%
-    blue: 100%
+    hex: '0000FF'
+#------------------------------- Серый -------------------------------#
   - id: gray_color
-    red: 50%
-    green: 50%
-    blue: 50%
+    hex: '808080'
+#------------------------------- Белый -------------------------------#
   - id: white_color
-    red: 100%
-    green: 100%
-    blue: 100%
+    hex: 'FFFFFF'
 
-#-----------------------------Шрифты----------------------------#
+#===================== Экран / настройка шрифтов =====================#
 font:
+#-----------------------BuyanBold (размер - 70) ----------------------#
   - file: 'fonts/BuyanBold.ttf'
     id: font_1
     size: 70
+#------------------------ Arial (размер - 30) ------------------------#
   - file: 'fonts/arial.ttf'
     id: font_2
     size: 30
-    glyphs: ' /³!"%()+=,-_.:°0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzАБВГДЕЁЖЗИКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзиклмнопрстуфхцчшщъыьэюя'
+    glyphs: !include add_config/glyphs.include.yaml
+#------------------------ Arial (размер - 12) ------------------------#
   - file: 'fonts/arial.ttf'
     id: font_3
     size: 12
-    glyphs: ' АБВГДЕЁЖЗИКЛМНОПРСТУФХЦЧШЩЪЫЬЭЮЯабвгдеёжзиклмнопрстуфхцчшщъыьэюя'
+    glyphs: !include add_config/glyphs.include.yaml
 
-#==========================Изображения==========================#   
+#================ Экран / настройка иконок/изображений ===============#  
 image:
-#------------------------Иконки датчиков------------------------#
-  - file: "images/meteo_display_sensor_icon/temperature.png"
-    id: sensor_temp
+#--------------------- Изображение / температура ---------------------#
+  - file: "images/meteo_display/temperature.png"
+    id: ${device}_img_temperature
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/humidity.png"
-    id: sensor_humi
+#---------------------- Изображение / влажность ----------------------#
+  - file: "images/meteo_display/humidity.png"
+    id: ${device}_img_humidity
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/pressure.png"
-    id: sensor_press
+#----------------------- Изображение / давление ----------------------#
+  - file: "images/meteo_display/pressure.png"
+    id: ${device}_img_pressure
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/co2.png"
-    id: sensor_co2
+#------------------------- Изображение / CO2 -------------------------#
+  - file: "images/meteo_display/co2.png"
+    id: ${device}_img_co2
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/pm_10.png"
-    id: sensor_pm10
-    type: RGB24    
-  - file: "images/meteo_display_sensor_icon/pm_25.png"
-    id: sensor_pm25
+#------------------------- Изображение / PM10 ------------------------#
+  - file: "images/meteo_display/pm_10.png"
+    id: ${device}_img_pm10
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/radiation.png"
-    id: sensor_radi
+#------------------------ Изображение / PM2.5 ------------------------#
+  - file: "images/meteo_display/pm_25.png"
+    id: ${device}_img_pm25
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/formaldehyde.png"
-    id: sensor_form
+#----------------------- Изображение / радиация ----------------------#
+  - file: "images/meteo_display/radiation.png"
+    id: ${device}_img_radiation
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/tvoc.png"
-    id: sensor_tvoc
+#--------------------- Изображение / формальдегид --------------------#
+  - file: "images/meteo_display/formaldehyde.png"
+    id: ${device}_img_formaldehyde
     type: RGB24
-  - file: "images/meteo_display_sensor_icon/light.png"
-    id: sensor_light
-    type: RGB24    
-  - file: "images/meteo_display_sensor_icon/uv.png"
-    id: sensor_uv
-    type: RGB24   
-  - file: "images/meteo_display_sensor_icon/thunder.png"
-    id: sensor_thunder
+#------------------------- Изображение / tVOC ------------------------#
+  - file: "images/meteo_display/tvoc.png"
+    id: ${device}_img_tVOC
+    type: RGB24
+#--------------------- Изображение / освещенность --------------------#
+  - file: "images/meteo_display/light.png"
+    id: ${device}_img_light
+    type: RGB24
+#-------------------------- Изображение / UV--------------------------#  
+  - file: "images/meteo_display/uv.png"
+    id: ${device}_img_uv
+    type: RGB24
+#----------------------- Изображение / давление ----------------------#
+  - file: "images/meteo_display/thunder.png"
+    id: ${device}_img_thunder
     type: RGB24
 
-#------------------------Настройка экрана-----------------------#
+#========================= Экран / настройка =========================#
 display:
   - platform: st7789v
+    id: ${device}_display
     model: TTGO TDisplay 135x240
-    backlight_pin: GPIO4
-    cs_pin: GPIO5
-    dc_pin: GPIO16
-    reset_pin: GPIO23
+    cs_pin: 5
+    dc_pin: 16
+    reset_pin: 23
+    backlight_pin: no
     rotation: 0
-    id: ${device}_disp
+#----------------------- Вывод страниц на экран ----------------------#
     pages:
+#.......................... Главная страница .........................#
       - id: ${device}_page_1
         lambda: |-
           it.rectangle(0, 32, 130, 198, id(green_color));
           it.line(0, 51, 128, 51, id(green_color));
           it.print(6, 36, font_3, yellow_color, "ПРОГНОЗ ПОГОДЫ");
-
 #          if (id(temp_1).has_state()) {
 #            if (id(temp_1).state < -25) {
 #              it.printf(115, 55, font_2, temp_min_30, TextAlign::TOP_RIGHT, "%.1f", id(temp_1).state);  }
@@ -386,7 +398,7 @@ display:
 #            else if (id(temp_1).state < -5) {
 #              it.printf(115, 55, font_2, temp_min_10, TextAlign::TOP_RIGHT, "%.1f", id(temp_1).state);  }
 #            else if (id(temp_1).state < 0)  {
-#              it.printf(115, 55, font_2, temp_min_5, TextAlign::TOP_RIGHT, "%.1f", id(temp_1).state); } 
+#              it.printf(115, 55, font_2, temp_min_5, TextAlign::TOP_RIGHT, "%.1f", id(temp_1).state); }
 #            else if (id(temp_1).state < 5)  {
 #              it.printf(115, 55, font_2, temp_pls_5, TextAlign::TOP_RIGHT, "%.1f", id(temp_1).state); }
 #            else if (id(temp_1).state < 10) {
@@ -400,69 +412,68 @@ display:
 #            else if (id(temp_1).state >= 25)  {
 #              it.printf(115, 55, font_2, temp_pls_30, TextAlign::TOP_RIGHT, "%.1f", id(temp_1).state);  }
 #            }
-
-
+#........................ Страница температуры .......................#
       - id: ${device}_page2
         lambda: |-
-          it.image(20, 40, id(sensor_temp));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(metsens_temperature).state);
+          it.image(20, 40, id(${device}_img_temperature));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(${ha_sensor}_temp).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "°C");
-
+#......................... Страница влажности ........................#
       - id: ${device}_page3
         lambda: |-
-          it.image(20, 40, id(sensor_humi));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(metsens_humidity).state);
+          it.image(20, 40, id(${device}_img_humidity));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(${ha_sensor}_humi).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "%%");
-
+#................... Страница атмосферного давления ..................#
       - id: ${device}_page4
         lambda: |-
-          it.image(20, 40, id(sensor_press));
+          it.image(20, 40, id(${device}_img_pressure));
           it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(${device}_press).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "мм рт.ст.");
-
+#............................ Страница CO2 ...........................#
       - id: ${device}_page5
         lambda: |-
-          it.image(20, 40, id(sensor_co2));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(metsens_co2).state);
+          it.image(20, 40, id(${device}_img_co2));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(${ha_sensor}_co2).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "ppm");
-
+#........................... Страница PM2.5 ..........................#
       - id: ${device}_page6
         lambda: |-
-          it.image(20, 40, id(sensor_pm25));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(metsens_pm2_5).state);
+          it.image(20, 40, id(${device}_img_pm25));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(${ha_sensor}_pm25).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "мкг/м³");
-
+#........................... Страница PM10 ...........................#
       - id: ${device}_page7
         lambda: |-
-          it.image(20, 40, id(sensor_pm10));          
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(metsens_pm10).state);
+          it.image(20, 40, id(${device}_img_pm10));          
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(${ha_sensor}_pm10).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "мкг/м³");
-
+#........................... Страница tVOC ...........................#
       - id: ${device}_page8
         lambda: |-
-          it.image(20, 40, id(sensor_tvoc));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(metsens_tvoc).state);
+          it.image(20, 40, id(${device}_img_tVOC));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(${ha_sensor}_tvoc).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "мкг/м³");
-
+#....................... Страница формальдегида ......................#
       - id: ${device}_page9
         lambda: |-
-          it.image(20, 40, id(sensor_form)); 
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(metsens_formaldehyde).state);
+          it.image(20, 40, id(${device}_img_formaldehyde)); 
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.0f", id(${ha_sensor}_form).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "мкг/м³");
-
+#.................... Страница радиационного фона ....................#
       - id: ${device}_page10
         lambda: |-
-          it.image(20, 40, id(sensor_radi));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(metsens_static_intensity).state);
+          it.image(20, 40, id(${device}_img_radiation));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(${ha_sensor}_stat).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "мкР/ч");
-
+#....................... Страница освещенности .......................#
       - id: ${device}_page11
         lambda: |-
-          it.image(20, 40, id(sensor_light));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(metsens_light).state);
+          it.image(20, 40, id(${device}_img_light));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(${ha_sensor}_light).state);
           it.printf(65, 200, font_2, white_color, TextAlign::TOP_CENTER, "люкс");
-
+#....................... Страница ультрафиолета ......................#
       - id: ${device}_page12
         lambda: |-
-          it.image(20, 40, id(sensor_uv));
-          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(metsens_uv).state);
+          it.image(20, 40, id(${device}_img_uv));
+          it.printf(65, 130, font_1, white_color, TextAlign::TOP_CENTER, "%.1f", id(${ha_sensor}_uv).state);
