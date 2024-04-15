@@ -1,24 +1,24 @@
-#-------------------------Подстановка имен----------------------#
+#========================== Подстановка имен =========================#
 substitutions:
   devicename: ups-nas
   device: ups_nas
-  up_device: "UPS NAS"
-  board: esp32dev
-  framework: arduino
   update: 60s
-#---------------------------Тип платы ESP-----------------------#
+
+#============================== Тип ESP ==============================#
 esp32:
-  board: $board
+  board: esp32dev
   framework:
-    type: $framework
-#---------------------------Имя платы ESP-----------------------#
+    type: esp-idf
+
+#========================= Параметры прошивки ========================#
 esphome:
   name: ${devicename}
   project:
     name: "Espressif.ESP32_Devkitc_V4"
     version: "2.1.7"
+  build_path: /config/esphome/build/ups_nas
 
-#--------------------------Параметры WiFi-----------------------#
+#=========================== Параметры WiFi ==========================#
 wifi:
   ssid: !secret ssid
   password: !secret pass
@@ -27,178 +27,200 @@ wifi:
     gateway: 192.168.1.1
     subnet: 255.255.255.0
   fast_connect: true
-#-----------------------Параметры веб-сервера-------------------#
-web_server:
-  port: 80
+
+#========================= Параметры логгера =========================#
 logger:
   baud_rate: 0
-#---------------------------Параметры API-----------------------#
+
+#=========================== Параметры API ===========================#
 api:
   encryption:
     key: !secret ups_nas_api
-#---------------------------Параметры OTA-----------------------#
+  reboot_timeout: 0s
+
+#=========================== Параметры OTA ===========================#
 ota:
   password: !secret ups_nas_ota
-#-------------------------Параметры DS18B20---------------------#
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#======================= Параметры 1wire/Dallas ======================#
 dallas:
-  - pin: GPIO32
+  - pin: 32
     id: dallas_wire
     update_interval: ${update}
-#-----------------------Параметры ModBus/UART-------------------#
+
+#=============================== Modbus ==============================#
 modbus:
+
+#=========================== Параметры UART ==========================#
 uart:
-  tx_pin: GPIO1
-  rx_pin: GPIO3
+  id: ${device}_pzem_uart
+  tx_pin: 1
+  rx_pin: 3
   baud_rate: 9600
   stop_bits: 2
-#---------------------Параметры ШИМ-контроллера-----------------#
+
+#==================== Настройка выхода ШИМ-сигнала ===================#
 output:
   - platform: ledc
-    pin: GPIO16
     id: ${device}_fan_pwm
+    pin: 16
     frequency: 20000Hz
     min_power: 30%
     max_power: 70%
-#---------------------Управление вентиляторами------------------#
-fan:
-  - platform: speed
-    id: ${device}_fan_speed
-    output: ${device}_fan_pwm
-    name: "${up_device} fan"
 
-#==============================Сенсоры==========================#
+#============================== Сенсоры ==============================#
 sensor:
-#-----------------------Мощность сигнала WiFi-------------------#
-  - platform: wifi_signal
-    name: "${up_device} WiFi signal"
-    id: ${device}_wifi 
-    update_interval: ${update}
-    icon: mdi:wifi-strength-2
-#--------------------Конвертация времени работы-----------------#
-  - platform: uptime
-    id: ${device}_uptime
-    internal: true
-    update_interval: ${update}
-    on_raw_value:
-      then:
-        - text_sensor.template.publish:
-            id: ${device}_uptime_text
-            state: !lambda |-
-              int seconds = round(id(${device}_uptime).raw_state);
-              int days = seconds / (24 * 3600);
-              seconds = seconds % (24 * 3600);
-              int hours = seconds / 3600;
-              seconds = seconds % 3600;
-              int minutes = seconds /  60;
-              seconds = seconds % 60;
-              return (
-                (days ? String(days) + "д " : "") +
-                (hours ? String(hours) + "ч " : "") +
-                (minutes ? String(minutes) + "м " : "") +
-                (String(seconds) + "с")
-              ).c_str();
-#-----------------------------PZEM-004T-------------------------#
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#---------------------------- PZEM - 004T ----------------------------#
   - platform: pzemac
-    current:
-      id: ${device}_curr
-      name: "${up_device} current"
-    voltage:
-      id: ${device}_volt
-      name: "${up_device} voltage"
+#.................. Общее потребления электроэнергии .................#
     energy:
-      id: ${device}_energ
-      name: "${up_device} energy"
+      id: ${device}_energy
+      name: "${devicename} Total energy"
+      unit_of_measurement: "kWh"
+      filters:
+      - multiply: 0.001
+      icon: mdi:sigma
+      device_class: "energy"
+#............................. Напряжение ............................#
+    voltage:
+      id: ${device}_voltage
+      name: "${devicename} Voltage"
+      unit_of_measurement: "V"
+      icon: mdi:alpha-v-circle-outline
+      device_class: "voltage"
+#............................. Сила тока .............................#
+    current:
+      id: ${device}_current
+      name: "${devicename} Amperage"
+      unit_of_measurement: "A"
+      icon: mdi:alpha-a-circle-outline
+      device_class: "current"
+#.............................. Мощность .............................#
     power:
       id: ${device}_power
-      name: "${up_device} power"
-    frequency:
-      id: ${device}_freq
-      name: "${up_device} frequency"
-      on_raw_value:
-        then:
-            - if:
-                condition:
-                  lambda: 'return id(${device}_freq).state < 75;'
-                then:
-                  - text_sensor.template.publish:
-                      id: ${device}_mode
-                      state: !lambda |-
-                        return ("ONLINE");
-                else:
-                  - text_sensor.template.publish:
-                      id: ${device}_mode
-                      state: !lambda |-
-                        return ("BATTERY");
+      name: "${devicename} Power"
+      unit_of_measurement: "W"
+      icon: mdi:home-lightning-bolt-outline
+      device_class: "power"
+#........................ Коэффициент мощности .......................#
     power_factor:
-      id: ${device}_pf   
-      name: "${up_device} P.F."
+      id: ${device}_pf
+      name: "${devicename} Power factor"
+      unit_of_measurement: "%"
+      accuracy_decimals: 0
+      filters:
+      - multiply: 100
+      icon: mdi:math-cos
+      device_class: "power factor"
+#........................... Частота в сети ..........................#
+    frequency:
+      id: ${device}_frequency
+      name: "${devicename} Frequency"
+      unit_of_measurement: "Hz"
+      icon: mdi:math-sin
+      device_class: "frequency"
     update_interval: ${update}
-#------------------------------DS18B20--------------------------#
+#------------------------------ DS18B20 ------------------------------#
   - platform: dallas
     address: 0x597177c50264ff28
-    id: temp_1
-    name: "${up_device} VT1 temp"
+    id: ${device}_vt1_temp
+    name: "${devicename} VT1 t°"
+    device_class: "temperature"
   - platform: dallas
     address: 0xc1089ac50264ff28
-    id: temp_2
-    name: "${up_device} VT2 temp"
+    id: ${device}_vt2_temp
+    name: "${devicename} VT2 t°"
+    device_class: "temperature"
   - platform: dallas
     address: 0x979a19fa0264ff28
-    id: temp_3
-    name: "${up_device} PZEM temp"
+    id: ${device}_pzem_temp
+    name: "${devicename} PZEM t°"
+    device_class: "temperature"
   - platform: dallas
     address: 0x3609c8c70264ff28
-    id: temp_4
-    name: "${up_device} T1 temp"
+    id: ${device}_t1_temp
+    name: "${devicename} Trans t°"
+    device_class: "temperature"
     on_value:
       then:
       - lambda: |-
           auto call = id(${device}_fan_speed).turn_on();
-          call.set_speed((id(temp_4).raw_state)-10);
+          call.set_speed((id(${device}_t1_temp).raw_state)-15);
           call.perform();
     on_raw_value:
       then:
         - text_sensor.template.publish:
             id: ${device}_fan_speed_text
             state: !lambda |-
-              int fan_speed = round(id(${device}_fan_speed).speed)*55;
-              return (
-                (String(fan_speed) + " rpm")
-              ).c_str();    
+              if (id(${device}_fan_speed).state) {
+                int fan_speed = round(id(${device}_fan_speed).speed)*55;
+                return (
+                  (to_string(fan_speed) + " rpm")
+                  ).c_str(); 
+              } else {
+                return "OFF"; }
   - platform: dallas
     address: 0x6abf44c10264ff28
-    id: temp_5
-    name: "${up_device} Q1 temp"
+    id: ${device}_q1_temp
+    name: "${devicename} Q1 t°"
+    device_class: "temperature"
+#---------------- ESP32 внутренний датчик температуры ----------------#
+  - platform: internal_temperature
+    id: ${device}_int_temp
+    name: "${devicename} ESP t°"
+    device_class: "temperature"
 
-#=========================Текстовые сенсоры=====================#
-text_sensor:
-#---------------------------Время работы------------------------#
-  - platform: template
-    name: "${up_device} uptime"
-    id: ${device}_uptime_text
-    icon: mdi:clock-plus-outline
-#-----------------------скорость вентилятора--------------------#
-  - platform: template
-    name: "${up_device} fan speed"
-    id: ${device}_fan_speed_text
-    icon: mdi:fan
-#-------------------------Статус работы ИБП---------------------#
-  - platform: template
-    name: "${up_device} mode"
-    id: ${device}_mode
-    icon: mdi:connection
+#============================ Вентиляторы ============================#
+fan:
+  - platform: speed
+    id: ${device}_fan_speed
+    name: "${devicename} Fan"
+    output: ${device}_fan_pwm
 
-#=========================Бинарные сенсоры======================#
-binary_sensor:
-#------------------------Статус подключения---------------------#
-  - platform: status
-    name: "${up_device} status"
-    id: ${device}_status
-
-#=========================Переключатели=========================#
+#=========================== Переключатели ===========================#
 switch:
-#---------------------Удаленный рестарт ESP---------------------#
-  - platform: restart
-    id: ${device}_restart
-    name: "${up_device} restart"
-    icon: "mdi:restart"
+#-------- Сброс общего потребления электроэнергии PZEM - 004T --------#
+  - platform: uart
+    uart_id: ${device}_pzem_uart
+    id: ${device}_pzem_reset_switch
+    data: [0x01, 0x42, 0x80, 0x11]
+
+#========================= Текстовые сенсоры =========================#
+text_sensor:
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+#------------------------ Обороты вентилятора ------------------------#
+  - platform: template
+    id: ${device}_fan_speed_text
+    name: "${devicename} Fan speed"
+    icon: mdi:fan-auto
+
+#========================== Бинарные сенсоры =========================#
+binary_sensor:
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+
+#=============================== Кнопки ==============================#
+button:
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
+#-------- Сброс общего потребления электроэнергии PZEM - 004T --------#    
+  - platform: template
+    id: ${device}_pzem_reset
+    name: "${devicename} PZEM reset"
+    on_press:
+      then:
+        - switch.turn_on: ${device}_pzem_reset_switch
+    icon: mdi:delete-restore
