@@ -1,23 +1,24 @@
-#------------------------Подстановка имен-----------------------#
+#========================== Подстановка имен =========================#
 substitutions:
   devicename: ups-pc
   device: ups_pc
-  up_device: "UPS PC"
-  board: esp32dev
-  framework: arduino
   update: 60s
-#-------------------------Тип платы ESP-------------------------#
+
+#============================== Тип ESP ==============================#
 esp32:
-  board: $board
+  board: esp32dev
   framework:
-    type: $framework
-#-------------------------Имя платы ESP-------------------------#
+    type: esp-idf
+
+#========================= Параметры прошивки ========================#
 esphome:
   name: ${devicename}
   project:
     name: "espressif.ESP32_Devkitc_V4"
     version: "1.4.9"
-#-------------------------Параметры WiFi------------------------#
+  build_path: /config/esphome/build/ups_pc
+
+#=========================== Параметры WiFi ==========================#
 wifi:
   ssid: !secret ssid
   password: !secret pass
@@ -26,129 +27,122 @@ wifi:
     gateway: 192.168.1.1
     subnet: 255.255.255.0
   fast_connect: true
-#-----------------------Параметры логгера-----------------------#
+
+#========================= Параметры логгера =========================#
 logger:
   baud_rate: 0
-#-------------------------Параметры API-------------------------#
+
+#=========================== Параметры API ===========================#
 api:
   encryption:
     key: !secret ups_pc_api
   reboot_timeout: 0s
-#-------------------------Параметры OTA-------------------------#
+
+#=========================== Параметры OTA ===========================#
 ota:
   password: !secret ups_pc_ota
-#-----------------------Параметры DS18B20-----------------------#
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#======================= Параметры 1wire/Dallas ======================#
 dallas:
   - pin: 14
     id: dallas_wire
-    update_interval: 60s
-#---------------------Параметры ModBus/UART---------------------#
+    update_interval: ${update}
+
+#=============================== Modbus ==============================#
 modbus:
+
+#=========================== Параметры UART ==========================#
 uart:
   id: ${device}_pzem_uart
-  tx_pin: GPIO1
-  rx_pin: GPIO3
+  tx_pin: 1
+  rx_pin: 3
   baud_rate: 9600
   stop_bits: 2
-#---------------------Параметры ШИМ-сигнала---------------------#
+
+#==================== Настройка выхода ШИМ-сигнала ===================#
 output:
   - platform: ledc
-    pin: GPIO32
     id: ${device}_fan_pwm
+    pin: 32
     frequency: 20000Hz
     min_power: 30%
     max_power: 70%
-#--------------------Управление вентиляторами-------------------#
-fan:
-  - platform: speed
-    id: ${device}_fan_speed
-    output: ${device}_fan_pwm
-    name: "${up_device} fan"
 
-#============================Сенсоры============================#
+#============================== Сенсоры ==============================#
 sensor:
-#---------------------Мощность сигнала WiFi---------------------#
-  - platform: wifi_signal
-    name: "${up_device} WiFi signal"
-    id: ${device}_wifi 
-    update_interval: ${update}
-    icon: mdi:wifi-strength-2
-#-------------------Конвертация времени работы------------------#
-  - platform: uptime
-    id: ${device}_uptime
-    internal: true
-    update_interval: ${update}
-    on_raw_value:
-      then:
-        - text_sensor.template.publish:
-            id: ${device}_uptime_text
-            state: !lambda |-
-              int seconds = round(id(${device}_uptime).raw_state);
-              int days = seconds / (24 * 3600);
-              seconds = seconds % (24 * 3600);
-              int hours = seconds / 3600;
-              seconds = seconds % 3600;
-              int minutes = seconds /  60;
-              seconds = seconds % 60;
-              return (
-                (days ? String(days) + "д " : "") +
-                (hours ? String(hours) + "ч " : "") +
-                (minutes ? String(minutes) + "м " : "") +
-                (String(seconds) + "с")
-              ).c_str();
-#---------------------------PZEM-004T---------------------------#
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#---------------------------- PZEM - 004T ----------------------------#
   - platform: pzemac
-    current:
-      id: ${device}_current
-      name: "${up_device} current"
-      unit_of_measurement: "A"
-      icon: mdi:alpha-a-circle-outline
-      device_class: "current"
+#.................. Общее потребления электроэнергии .................#
+    energy:
+      id: ${device}_energy
+      name: "${devicename} Total energy"
+      unit_of_measurement: "kWh"
+      filters:
+      - multiply: 0.001
+      icon: mdi:sigma
+      device_class: "energy"
+#............................. Напряжение ............................#
     voltage:
       id: ${device}_voltage
-      name: "${up_device} voltage"
+      name: "${devicename} Voltage"
       unit_of_measurement: "V"
       icon: mdi:alpha-v-circle-outline
       device_class: "voltage"
-    energy:
-      id: ${device}_energy
-      name: "${up_device} energy"
-      unit_of_measurement: "kWh"
-      icon: mdi:sigma
-      device_class: "energy"
+#............................. Сила тока .............................#
+    current:
+      id: ${device}_current
+      name: "${devicename} Amperage"
+      unit_of_measurement: "A"
+      icon: mdi:alpha-a-circle-outline
+      device_class: "current"
+#.............................. Мощность .............................#
     power:
       id: ${device}_power
-      name: "${up_device} power"
+      name: "${devicename} Power"
       unit_of_measurement: "W"
       icon: mdi:home-lightning-bolt-outline
       device_class: "power"
+#........................ Коэффициент мощности .......................#
+    power_factor:
+      id: ${device}_pf
+      name: "${devicename} Power factor"
+      unit_of_measurement: "%"
+      accuracy_decimals: 0
+      filters:
+      - multiply: 100
+      icon: mdi:math-cos
+      device_class: "power factor"
+#........................... Частота в сети ..........................#
     frequency:
       id: ${device}_frequency
-      name: "${up_device} frequency"
+      name: "${devicename} Frequency"
       unit_of_measurement: "Hz"
       icon: mdi:math-sin
       device_class: "frequency"
-    power_factor:
-      id: ${device}_pf
-      name: "${up_device} P.F."
-      icon: mdi:math-cos
-      device_class: "power factor"
-    update_interval: 1s
-#----------------------------DS18B20----------------------------#
+    update_interval: ${update}
+#------------------------------ DS18B20 ------------------------------#
   - platform: dallas
     address: 0x9f540cc70264ff28
-    id: temp_1
-    name: "${up_device} batt1 temp"
+    id: ${device}_batt_1
+    name: "${devicename} Battery t° 1"
     device_class: "temperature"
   - platform: dallas
     address: 0x7f673ec70264ff28
-    id: temp_2
-    name: "${up_device} batt2 temp"
+    id: ${device}_batt_2
+    name: "${devicename} Battery t° 2"
     device_class: "temperature"
   - platform: dallas
     address: 0x1212e5c10264ff28
-    id: temp_3
-    name: "${up_device} T1 temp"
+    id: ${device}_trans_1
+    name: "${devicename} Trans t° 1"
     device_class: "temperature"
     on_value:
       then:
@@ -158,7 +152,7 @@ sensor:
               call.perform();  }
             else  {
               auto call = id(${device}_fan_speed).turn_on();
-              call.set_speed((id(temp_3).raw_state)+20);
+              call.set_speed((id(${device}_trans_1).raw_state)+20);
               call.perform(); }
     on_raw_value:
       then:
@@ -168,65 +162,64 @@ sensor:
               if (id(${device}_fan_speed).state) {
                 int fan_speed = round(id(${device}_fan_speed).speed)*55;
                 return (
-                  (String(fan_speed) + " rpm")
-                  ).c_str(); 
+                  (to_string(fan_speed) + " rpm")
+                  ).c_str();
               } else {
-                return (
-                  (String() + "OFF")
-                  ).c_str(); }
+                return "OFF"; }
   - platform: dallas
     address: 0x309c04c10264ff28
-    id: temp_4
-    name: "${up_device} T2 temp"
+    id: ${device}_trans_2
+    name: "${devicename} Trans t° 2"
+    device_class: "temperature"
+#---------------- ESP32 внутренний датчик температуры ----------------#
+  - platform: internal_temperature
+    id: ${device}_int_temp
+    name: "${devicename} ESP t°"
     device_class: "temperature"
 
-#=========================Переключатели=========================#
+#============================ Вентиляторы ============================#
+fan:
+  - platform: speed
+    id: ${device}_fan_speed
+    name: "${devicename} Fan"
+    output: ${device}_fan_pwm
+
+#=========================== Переключатели ===========================#
 switch:
-#----------------Сброс общего потребления из сети---------------#
+#-------- Сброс общего потребления электроэнергии PZEM - 004T --------#
   - platform: uart
     uart_id: ${device}_pzem_uart
     id: ${device}_pzem_reset_switch
     data: [0x01, 0x42, 0x80, 0x11]
 
-#=======================Текстовые сенсоры=======================#
+#========================= Текстовые сенсоры =========================#
 text_sensor:
-#--------------------------Время работы-------------------------#
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+#------------------------ Обороты вентилятора ------------------------#
   - platform: template
-    name: "${up_device} uptime"
-    id: ${device}_uptime_text
-    icon: mdi:clock-plus-outline
-#----------------------Скорость вентилятора---------------------#
-  - platform: template
-    name: "${up_device} fan speed"
     id: ${device}_fan_speed_text
+    name: "${devicename} Fan speed"
     icon: mdi:fan-auto
-#-----------------------Информация о сети-----------------------#    
-  - platform: wifi_info
-    ip_address:
-      name: "${up_device} IP"
-      icon: mdi:ip
-    bssid:
-      name: "${up_device} BSSID"
-      icon: mdi:link
 
-#========================Бинарные сенсоры=======================#
+#========================== Бинарные сенсоры =========================#
 binary_sensor:
-#-----------------------Статус подключения----------------------#
-  - platform: status
-    name: "${up_device} status"
-    id: ${device}_status
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
 
-#=============================Кнопки============================#
+#=============================== Кнопки ==============================#
 button:
-#---------------------Удаленный рестарт ESP---------------------#
-  - platform: restart
-    id: ${device}_restart
-    name: "${up_device} restart"
-    icon: "mdi:restart"
-#----------------Сброс общего потребления из сети---------------#    
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
+#-------- Сброс общего потребления электроэнергии PZEM - 004T --------#
   - platform: template
     id: ${device}_pzem_reset
-    name: "${up_device} PZEM reset"
+    name: "${devicename} PZEM reset"
     on_press:
       then:
-        - switch.turn_on: ${device}_pzem_reset_switch        
+        - switch.turn_on: ${device}_pzem_reset_switch
+    icon: mdi:delete-restore
