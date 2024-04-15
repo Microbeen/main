@@ -1,21 +1,22 @@
-#-------------------------Подстановка имен----------------------#
+#========================== Подстановка имен =========================#
 substitutions:
   devicename: polka-svet
-  device: plk_svet
-  up_device: "PLKsvet"
-  board: d1_mini
-  framework: arduino
+  device: polka_svet
   update: 60s
-#---------------------------Тип платы ESP-----------------------#
+
+#============================== Тип ESP ==============================#
 esp8266:
-  board: $board
-#---------------------------Имя платы ESP-----------------------#
+  board: d1_mini
+
+#========================= Параметры прошивки ========================#
 esphome:
   name: ${devicename}
   project:
     name: "Wemos.D1 mini v3"
     version: "1.4.6"
-#--------------------------Параметры WiFi-----------------------#
+  build_path: /config/esphome/build/polka_svet
+
+#=========================== Параметры WiFi ==========================#
 wifi:
   ssid: !secret ssid
   password: !secret pass
@@ -24,73 +25,90 @@ wifi:
     gateway: 192.168.1.1
     subnet: 255.255.255.0
   fast_connect: true
-#-----------------------Включение веб-сервера-------------------#
-web_server:
-  port: 80
 
+#========================= Параметры логгера =========================#
 logger:
-#---------------------------Параметры API-----------------------#
+  baud_rate: 0
+
+#=========================== Параметры API ===========================#
 api:
   encryption:
     key: !secret plk_svet_api
-#---------------------------Параметры OTA-----------------------#
+  reboot_timeout: 0s
+
+#=========================== Параметры OTA ===========================#
 ota:
   password: !secret plk_svet_ota
 
-#==============================Сенсоры==========================#
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+
+#============================== Сенсоры ==============================#
 sensor:
-#-----------------------Мощность сигнала WiFi-------------------#
-  - platform: wifi_signal
-    name: "${up_device} WiFi signal"
-    id: ${device}_wifi 
-    update_interval: ${update}
-    icon: mdi:wifi-strength-2
-#--------------------Конвертация времени работы-----------------#
-  - platform: uptime
-    id: ${device}_uptime
-    internal: true
-    update_interval: ${update}
-    on_raw_value:
-      then:
-        - text_sensor.template.publish:
-            id: ${device}_uptime_text
-            state: !lambda |-
-              int seconds = round(id(${device}_uptime).raw_state);
-              int days = seconds / (24 * 3600);
-              seconds = seconds % (24 * 3600);
-              int hours = seconds / 3600;
-              seconds = seconds % 3600;
-              int minutes = seconds /  60;
-              seconds = seconds % 60;
-              return (
-                (days ? String(days) + "д " : "") +
-                (hours ? String(hours) + "ч " : "") +
-                (minutes ? String(minutes) + "м " : "") +
-                (String(seconds) + "с")
-              ).c_str();
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
 
-#=========================Текстовые сенсоры=====================#
-text_sensor:
-#---------------------------Время работы------------------------#
-  - platform: template
-    name: "${up_device} uptime"
-    id: ${device}_uptime_text
-    icon: mdi:clock-plus-outline
-
-#=========================Бинарные сенсоры======================#
-binary_sensor:
-#------------------------Статус подключения---------------------#
-  - platform: status
-    name: "${up_device} status"
-    id: ${device}_status
-#----------------------Кнопка яркого освещения------------------#
+#=========================== Переключатели ===========================#
+switch:
+#----------------------- Реле не задействовано -----------------------#
   - platform: gpio
+    id: ${device}_rel1
     pin:
-      number: GPIO5
+      number: 14
+      inverted: yes
+    internal: true 
+#----------------------- Реле яркого освещения -----------------------#
+  - platform: gpio
+    id: ${device}_rel2  
+    name: "${devicename} Panel light"
+    pin:
+      number: 12
+      inverted: yes
+#---------------------- Реле тусклого освещения ----------------------#
+  - platform: gpio
+    id: ${device}_rel4  
+    name: "${devicename} Night light"
+    pin:
+      number: 15
+      inverted: yes
+#---------------------- Реле бокового освещения ----------------------#
+  - platform: gpio
+    id: ${device}_rel3  
+    name: "${devicename} Side light"
+    pin:
+      number: 13
+      inverted: yes
+#------------------------ Сигнальный светодиод -----------------------#
+  - platform: gpio
+    id: ${device}_LED
+    pin:
+      number: 16
+    internal: true
+
+#========================= Текстовые сенсоры =========================#
+text_sensor:
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+
+#========================== Бинарные сенсоры =========================#
+binary_sensor:
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+#---------------------- Кнопка яркого освещения ----------------------#
+  - platform: gpio
+    id: ${device}_butn4  
+    pin:
+      number: 5
       inverted: true
       mode: INPUT_PULLUP
-    id: ${device}_butn4
-    internal: true
     on_press:
       then:
       - switch.toggle: ${device}_rel2
@@ -98,14 +116,14 @@ binary_sensor:
     on_release:
       then:
       - switch.turn_off: ${device}_LED
-#--------------------Кнопка тусклого освещения------------------#
+    internal: true
+#--------------------- Кнопка тусклого освещения ---------------------#
   - platform: gpio
+    id: ${device}_butn3  
     pin:
-      number: GPIO4
+      number: 4
       inverted: true
       mode: INPUT_PULLUP
-    id: ${device}_butn3
-    internal: true
     on_press:
       then:
       - switch.toggle: ${device}_rel4
@@ -113,14 +131,14 @@ binary_sensor:
     on_release:
       then:
       - switch.turn_off: ${device}_LED
-#-------------------Кнопка бокового освещения-------------------#
+    internal: true
+#--------------------- Кнопка бокового освещения ---------------------#
   - platform: gpio
+    id: ${device}_butn1  
     pin:
-      number: GPIO2
+      number: 2
       inverted: true
       mode: INPUT_PULLUP
-    id: ${device}_butn1
-    internal: true
     on_press:
       then:
       - switch.toggle: ${device}_rel3
@@ -128,13 +146,14 @@ binary_sensor:
     on_release:
       then:
       - switch.turn_off: ${device}_LED
-#-------------------Кнопка общего отключения--------------------#
+    internal: true
+#---------------------- Кнопка общего отключения ---------------------#
   - platform: gpio
+    id: ${device}_butn2  
     pin:
-      number: GPIO0
+      number: 0
       inverted: true
       mode: INPUT_PULLUP
-    id: ${device}_butn2
     on_press:
       then:
       - switch.turn_off: ${device}_rel1
@@ -145,46 +164,9 @@ binary_sensor:
     on_release:
       then:
       - switch.turn_off: ${device}_LED
+    internal: true
 
-#=========================Переключатели=========================#
-switch:
-#---------------------Удаленный рестарт ESP---------------------#
-  - platform: restart
-    id: ${device}_restart
-    name: "${up_device} restart"
-    icon: "mdi:restart"
-#---------------------Реле не задействовано---------------------#
-  - platform: gpio
-    name: "${up_device} relay 1"
-    id: ${device}_rel1
-    internal: true
-    pin:
-      number: GPIO14
-      inverted: yes
-#---------------------Реле яркого освещения---------------------#
-  - platform: gpio
-    name: "${up_device} P-led"
-    id: ${device}_rel2
-    pin:
-      number: GPIO12
-      inverted: yes
-#--------------------Реле тусклого освещения--------------------#
-  - platform: gpio
-    name: "${up_device} UP-led"
-    id: ${device}_rel4
-    pin:
-      number: GPIO15
-      inverted: yes
-#--------------------Реле бокового освещения--------------------#
-  - platform: gpio
-    name: "${up_device} R-led"
-    id: ${device}_rel3
-    pin:
-      number: GPIO13
-      inverted: yes
-#----------------------Сигнальный светодиод---------------------#
-  - platform: gpio
-    id: ${device}_LED
-    internal: true
-    pin:
-      number: GPIO16
+#=============================== Кнопки ==============================#
+button:
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
