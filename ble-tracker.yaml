@@ -1,0 +1,199 @@
+#========================== Подстановка имен =========================#
+substitutions:
+  devicename: ble-tracker
+  device: ble_tracker
+  LYWSD02_mac: "E7:2E:00:F0:8C:41"
+  #Smartlife_termo_mac: DC:23:4F:7E:B9:EE
+  white_nut_id: "white_nut"
+  white_nut_name: "White NUT"
+  white_nut_mac: "FF:FF:18:17:09:A4"
+  green_nut_id: "green_nut"
+  green_nut_name: "Green NUT"
+  orange_nut_id: "orange_nut"
+  orange_nut_name: "Orange NUT"
+  update: 60s
+
+#============================== Тип ESP ==============================#
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+#========================= Параметры прошивки ========================#
+esphome:
+  name: ${devicename}
+  project:
+    name: "Espressif.ESP32_Devkitc_V4"
+    version: "0.0.12"
+  build_path: /config/esphome/build/ble_tracker
+
+#=========================== Параметры WiFi ==========================#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret ble_nas_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+
+#========================= Параметры логгера =========================#
+logger:
+  baud_rate: 0
+
+#=========================== Параметры API ===========================#
+api:
+  encryption:
+    key: !secret ble_nas_api
+  reboot_timeout: 0s
+
+#=========================== Параметры OTA ===========================#
+ota:
+  password: !secret ble_nas_ota
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#======================= Параметры 1wire/Dallas ======================#
+dallas:
+  - pin: 32
+    id: dallas_wire
+    update_interval: ${update}
+
+#=========================== Параметры BLE ===========================#
+esp32_ble_tracker:
+  scan_parameters:
+    interval: 1100ms
+    window: 1100ms
+    active: true
+  on_ble_advertise:
+    - mac_address: ${LYWSD02_mac}
+      then:
+      - switch.turn_on: ${device}_grn_led
+      - delay: 200ms
+      - switch.turn_off: ${device}_grn_led
+    - mac_address: ${white_nut_mac}
+      then:
+      - switch.turn_on: ${device}_grn_led
+      - delay: 200ms
+      - switch.turn_off: ${device}_grn_led  
+bluetooth_proxy:
+  active: true
+
+#======================= Параметры BLE-клиента =======================#
+ble_client:
+  - mac_address: ${LYWSD02_mac}
+    id: ${device}_clock_set
+    on_connect:
+      then:
+        - lambda: |-
+            ESP_LOGD("ble_client_lambda", "Connected to lywsd02_clock!");
+        - delay: 20s
+        - ble_client.ble_write:
+            id: ${device}_clock_set
+            service_uuid: ebe0ccb0-7a0a-4b0c-8a1a-6ff2997da3a6 
+            characteristic_uuid: EBE0CCB7-7A0A-4B0C-8A1A-6FF2997DA3A6
+            value: !lambda |-
+                auto time = id(${device}_esptime).utcnow();
+                uint8_t time_byte1 =  time.timestamp & 0x000000ff;
+                uint8_t time_byte2 = (time.timestamp & 0x0000ff00) >> 8;
+                uint8_t time_byte3 = (time.timestamp & 0x00ff0000) >> 16;
+                uint8_t time_byte4 = (time.timestamp & 0xff000000) >> 24;
+                uint8_t timezone_byte = time.timezone_offset() / 3600;
+                return {time_byte1, time_byte2, time_byte3, time_byte4, timezone_byte};
+        - delay: 20s
+        - switch.turn_off: lywsd02_ble_connection
+    on_disconnect:
+      then:
+        - lambda: |-
+            ESP_LOGD("ble_client_lambda", "Disconnected from lywsd02_clock!");
+
+  - mac_address: DC:23:4F:7E:B9:EE
+
+#============= Синхронизация времени через HomeAssistant =============#
+time:
+  - platform: homeassistant
+    id: ${device}_esptime
+    on_time:
+        minutes: /5
+        days_of_week: 1-7
+        then:
+          - switch.turn_on: lywsd02_ble_connection
+
+#============================== Сенсоры ==============================#
+sensor:
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#------------------------------ DS18B20 ------------------------------#
+  - platform: dallas
+    address: 0xab3807c10264ff28
+    id: ${device}_board_temp
+    name: "${devicename} Board t°"
+    unit_of_measurement: "°C"
+    device_class: "temperature"
+
+#========================== Источники света ==========================#
+light:
+#------------------------- Светодиод статуса -------------------------#
+  - platform: status_led
+    id: ${device}_red_led
+    pin:
+      number: 21
+      inverted: true
+    internal: true
+
+#=========================== Переключатели ===========================#
+switch:
+#---------------------- Синий верхний светодиод ----------------------#
+  - platform: gpio
+    id: ${device}_blu_led_up
+    pin:
+      number: 17
+      inverted: true
+    internal: true
+#----------------------- Синий нижний светодиод ----------------------#
+  - platform: gpio
+    id: ${device}_blu_led_down
+    pin:
+      number: 33
+      inverted: true
+    internal: true
+#------------------------- Зеленый светодиод -------------------------#
+  - platform: gpio
+    id: ${device}_grn_led
+    pin:
+      number: 27
+      inverted: true
+    internal: true
+
+  - platform: ble_client
+    ble_client_id: ${device}_clock_set
+    id: lywsd02_ble_connection
+    restore_mode: ALWAYS_OFF 
+
+#========================= Текстовые сенсоры =========================#
+text_sensor:
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+
+#========================== Бинарные сенсоры =========================#
+binary_sensor:
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+
+  - platform: ble_presence
+    mac_address: FF:FF:18:17:09:A4
+    id: nut_presense
+    name: "NUT presense"
+
+#=============================== Кнопки ==============================#
+button:
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
