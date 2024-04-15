@@ -1,28 +1,29 @@
-#------------------------Подстановка имен-----------------------#
+#========================== Подстановка имен =========================#
 substitutions:
   devicename: input-meter
   device: input_meter
-  up_device: "InpMet"
-  board: esp01_1m
-  framework: arduino
   update: 60s
-#-------------------------Тип платы ESP-------------------------#
+
+#============================== Тип ESP ==============================#
 esp8266:
-  board: $board
-#-------------------------Имя платы ESP-------------------------#
+  board: esp01_1m
+
+#========================= Параметры прошивки ========================#
 esphome:
   name: ${devicename}
   project:
     name: "Espressif.Esp8266-07s"
-    version: "0.2.7"
-#-----------------------Внешние библиотеки----------------------#
+    version: "1.3.7"
+  on_boot:
+    priority: 600
+    then:
+      - switch.turn_on: ${device}_main_switch
+  build_path: /config/esphome/build/input_meter
+#------------------------- Внешние библиотеки ------------------------#
 external_components:
-  - source: github://dentra/esphome@tuya-raw-fix 
-    components: ["tuya"]
-  - source: github://dentra/esphome@tuya-raw-fix-standalone
-    components: ["tuya"]
   - source: github://dentra/esphome-components
-#-------------------------Параметры WiFi------------------------#
+
+#=========================== Параметры WiFi ==========================#
 wifi:
   ssid: !secret ssid
   password: !secret pass
@@ -31,28 +32,38 @@ wifi:
     gateway: 192.168.1.1
     subnet: 255.255.255.0
   fast_connect: true
-#-----------------------Параметры логгера-----------------------#
+
+#========================= Параметры логгера =========================#
 logger:
   baud_rate: 0
-#-------------------------Параметры API-------------------------#
+
+#=========================== Параметры API ===========================#
 api:
   encryption:
     key: !secret inp_met_api
   reboot_timeout: 0s
-#-------------------------Параметры OTA-------------------------#
+
+#=========================== Параметры OTA ===========================#
 ota:
   password: !secret inp_met_ota
-#-----------------------Параметры DS18B20-----------------------#
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#======================= Параметры 1wire/Dallas ======================#
 dallas:
-  - pin: GPIO4
+  - pin: 4
     id: dallas_wire
     update_interval: ${update}
-#-------------------------Параметры UART------------------------#
+
+#=========================== Параметры UART ==========================#
 uart:
-  rx_pin: GPIO3
-  tx_pin: GPIO1
+  rx_pin: 3
+  tx_pin: 1
   baud_rate: 9600
-#-------------------Параметры связи с Tuya MCU------------------#
+
+#========================= Параметры Tuya MCU ========================#
 tuya:
   on_datapoint_update:
     - sensor_datapoint: 6
@@ -62,178 +73,198 @@ tuya:
             id(${device}_voltage).publish_state((x[0] << 8 | x[1]) * 0.1);
             id(${device}_current).publish_state((x[3] << 8 | x[4]) * 0.001);
             id(${device}_power).publish_state((x[6] << 8 | x[7]) * 0.1);
-#-----------Синхронизация времени через HomeAssistant-----------#
+
+#============= Синхронизация времени через HomeAssistant =============#
 time:
   - platform: homeassistant
-    id: esptime
+    id: ${device}_esptime
 
-#============================Сенсоры============================#
+#================ Обновление статуса реле по интервалу ===============#
+interval:
+  - interval: 1min
+    then:
+      - lambda: |-
+          if (id(${device}_main_switch).state) {
+            id(${device}_main_switch_status).publish_state("ON");
+          } else {
+            id(${device}_main_switch_status).publish_state("OFF");
+          }
+
+#============================== Сенсоры ==============================#
 sensor:
-#---------------------Мощность сигнала WiFi---------------------#
-  - platform: wifi_signal
-    id: ${device}_wifi 
-    name: "${up_device} WiFi signal"
-    update_interval: ${update}
-    icon: mdi:wifi-strength-2
-    device_class: "signal_strength"
-#-------------------Конвертация времени работы------------------#
-  - platform: uptime
-    id: ${device}_uptime
-    internal: true
-    update_interval: ${update}
-    on_raw_value:
-      then:
-        - text_sensor.template.publish:
-            id: ${device}_uptime_convert
-            state: !lambda |-
-              int seconds = round(id(${device}_uptime).raw_state);
-              int days = seconds / (24 * 3600);
-              seconds = seconds % (24 * 3600);
-              int hours = seconds / 3600;
-              seconds = seconds % 3600;
-              int minutes = seconds /  60;
-              seconds = seconds % 60;
-              return (
-                (days ? String(days) + "д " : "") +
-                (hours ? String(hours) + "ч " : "") +
-                (minutes ? String(minutes) + "м " : "") +
-                (String(seconds) + "с")
-              ).c_str();
-#---------------------Датчики электропитания--------------------# 
-  - platform: "tuya"
-    id: ${device}_total
-    name: "${up_device} total energy"
-    sensor_datapoint: 1
-    accuracy_decimals: 3
-    filters:
-      - multiply: 0.001
-    unit_of_measurement: "kWh"
-    icon: mdi:sigma
-    device_class: "energy"
-  - platform: template
-    id: ${device}_voltage
-    name: "${up_device} voltage"
-    unit_of_measurement: "V"
-    icon: mdi:alpha-v-circle-outline
-    device_class: "voltage"
-  - platform: template
-    id: ${device}_current
-    name: "${up_device} current"
-    accuracy_decimals: 2
-    unit_of_measurement: "A"
-    icon: mdi:alpha-a-circle-outline
-    device_class: "current"
-  - platform: template
-    id: ${device}_power
-    name: "${up_device} active power"
-    unit_of_measurement: "W"
-    accuracy_decimals: 0
-    icon: mdi:home-lightning-bolt-outline
-    device_class: "power"
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#---------------------------- Датчики TUYA ---------------------------#
+#................... Общий датчик энергомониторинга ..................#
   - platform: "energy_monitoring"
     power: ${device}_power
     voltage: ${device}_voltage
     current: ${device}_current
     apparent_power:
-      id: ${device}_apparent_power
-      name: "${up_device} apparent power"
-      unit_of_measurement: "VA"
-      icon: mdi:flash
-      device_class: "apparent power"
+      id: ${device}_apparent_power_tuya
+      internal: true
     reactive_power:
-      id: ${device}_reactive_power
-      name: "${up_device} reactive power"
-      unit_of_measurement: "VA"
-      icon: mdi:flash
-      device_class: "reactive power"
+      id: ${device}_reactive_power_tuya
+      internal: true
     power_factor:
-      id: ${device}_pf
-      name: "${up_device} power factor"
-      icon: mdi:math-cos
-      unit_of_measurement: "%"
-      device_class: "power factor"
+      id: ${device}_power_factor_tuya
+      internal: true
+#.................. Общее потребления электроэнергии .................#
   - platform: "tuya"
-    sensor_datapoint: 101
-    id: ${device}_voltage_limit_max
-    name: "${up_device} voltage limit max"
+    sensor_datapoint: 1
+    id: ${device}_total
+    name: "${devicename} Total energy"
+    unit_of_measurement: "Wh"
+    icon: mdi:home-lightning-bolt-outline
+    device_class: "energy"
+#............................. Напряжение ............................#
+  - platform: template
+    id: ${device}_voltage
+    name: "${devicename} Voltage"
     unit_of_measurement: "V"
-    icon: mdi:arrow-collapse-up
-  - platform: "tuya"
-    sensor_datapoint: 102
-    id: ${device}_voltage_limit_min
-    name: "${up_device} voltage limit min"
-    unit_of_measurement: "V"
-    icon: mdi:arrow-collapse-down
+    filters:
+      - median:
+         window_size: 11
+         send_every: 7
+         send_first_at: 2
+    icon: mdi:alpha-v-circle-outline
+    device_class: "voltage"
+#............................. Сила тока .............................#
+  - platform: template
+    id: ${device}_current
+    name: "${devicename} Amperage"
+    accuracy_decimals: 1
+    unit_of_measurement: "A"
+    filters:
+      - median:
+         window_size: 11
+         send_every: 7
+         send_first_at: 2
+    icon: mdi:alpha-a-circle-outline
+    device_class: "current"
+#.......................... Полная мощность ..........................#
+  - platform: template
+    id: ${device}_apparent_power
+    name: "${devicename} Apparent power"
+    unit_of_measurement: "VA"
+    accuracy_decimals: 0
+    lambda: |-
+      return id(${device}_apparent_power_tuya).state;
+    icon: mdi:flash
+    device_class: "apparent power"
+#......................... Активная мощность .........................#
+  - platform: template
+    id: ${device}_power
+    name: "${devicename} Active power"
+    unit_of_measurement: "W"
+    accuracy_decimals: 0
+    filters:
+      - median:
+         window_size: 11
+         send_every: 2
+         send_first_at: 2
+    icon: mdi:flash
+    device_class: "power"
+#........................ Реактивная мощность ........................#
+  - platform: template
+    id: ${device}_reactive_power
+    name: "${devicename} Reactive power"
+    unit_of_measurement: "var"
+    accuracy_decimals: 0
+    lambda: |-
+      return id(${device}_reactive_power_tuya).state;
+    icon: mdi:flash
+    device_class: "reactive power"
+#........................ Коэффициент мощности .......................#
+  - platform: template
+    id: ${device}_power_factor
+    name: "${devicename} Power factor"
+    unit_of_measurement: "%"
+    filters:
+      - multiply: 100
+    lambda: |-
+      return id(${device}_power_factor_tuya).state;
+    icon: mdi:math-cos
+    device_class: "power factor" 
+#........................... Частота в сети ..........................#
   - platform: "tuya"
     sensor_datapoint: 103
     id: ${device}_frequency
-    name: "${up_device} frequency"
+    name: "${devicename} Frequency"
     unit_of_measurement: "Hz"
     icon: mdi:math-sin
     device_class: "frequency"
-#-----------------------Хрен знает что это----------------------#
+#............... Верхний порог отключения по напряжению ..............#
   - platform: "tuya"
-    id: ${device}_z_nodata_1
-    name: "${up_device} z NODATA 1"
+    sensor_datapoint: 101
+    id: ${device}_voltage_limit_max
+    name: "${devicename} Max voltage limit"
+    unit_of_measurement: "V"
+    icon: mdi:tag-arrow-up-outline
+#............... Нижний порог отключения по напряжению ...............#
+  - platform: "tuya"
+    sensor_datapoint: 102
+    id: ${device}_voltage_limit_min
+    name: "${devicename} Min voltage limit"
+    unit_of_measurement: "V"
+    icon: mdi:tag-arrow-down-outline
+#...................... ХРЕН ЗНАЕТ ЧТО ЭТО ТАКОЕ .....................#
+  - platform: "tuya"
+    id: ${device}_NODATA_1
     sensor_datapoint: 13
+    internal: true
   - platform: "tuya"
-    id: ${device}_z_nodata_2
-    name: "${up_device} z NODATA 2"
+    id: ${device}_NODATA_2
     sensor_datapoint: 104
-#----------------------------DS18B20----------------------------#
+    internal: true
+#------------------------------ DS18B20 ------------------------------#
   - platform: dallas
     address: 0x673c01d607c85428
     id: ${device}_temp
-    name: "${up_device} temperature"
+    name: "${devicename} Board t°"
     device_class: "temperature"
 
-#===========================Светодиоды==========================#
+#============================= Светодиоды ============================#
 light:
-#-----------------------Светодиод статуса-----------------------#
+#------------------------- Светодиод статуса -------------------------#
   - platform: status_led
     id: ${device}_led
     internal: true
     pin:
-      number: GPIO2
+      number: 2
       inverted: true
 
-#=========================Переключатели=========================#
+#=========================== Переключатели ===========================#
 switch:
-#-------------Включение общего реле электроснабжения------------#
+#--------------- Включение общего реле электроснабжения --------------#
   - platform: "tuya"
     id: ${device}_main_switch
-    name: "${up_device} main power"
+    name: "${devicename} Main switch"
     switch_datapoint: 16
     icon: mdi:power
 
-#=======================Текстовые сенсоры=======================#
+#========================= Текстовые сенсоры =========================#
 text_sensor:
-#--------------------------Время работы-------------------------#
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+#----------------------- Статус включения реле -----------------------#
   - platform: template
-    id: ${device}_uptime_convert
-    name: "${up_device} uptime"
-    update_interval: ${update}
-    icon: mdi:clock-plus-outline
-#-----------------------Информация о сети-----------------------#    
-  - platform: wifi_info
-    ip_address:
-      name: "${up_device} IP"
-      icon: mdi:ip
-    bssid:
-      name: "${up_device} BSSID"
-      icon: mdi:link
+    id: ${device}_main_switch_status
+    name: "${devicename} Main switch status"
+    icon: mdi:toggle-switch-variant-off
 
-#========================Бинарные сенсоры=======================#
+#========================== Бинарные сенсоры =========================#
 binary_sensor:
-#-----------------------Статус подключения----------------------#
-  - platform: status
-    id: ${device}_status
-    name: "${up_device} status"
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
 
-#=============================Кнопки============================#
+#=============================== Кнопки ==============================#
 button:
-#---------------------Удаленный рестарт ESP---------------------#
-  - platform: restart
-    id: ${device}_restart
-    name: "${up_device} restart"
-    icon: mdi:restart
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
