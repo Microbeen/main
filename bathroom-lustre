@@ -1,0 +1,151 @@
+#========================== Подстановка имен =========================#
+substitutions:
+  devicename: bathroom-lustre
+  device: bathroom_lustre
+  update: 60s
+
+#============================== Тип ESP ==============================#
+esp8266:
+  board: esp07s
+
+#========================= Параметры прошивки ========================#
+esphome:
+  name: ${devicename}
+  project:
+    name: "Espressif.Esp8266-07s"
+    version: "0.0.1"
+  on_boot:
+    priority: -100
+    then:
+      - switch.turn_off: ${device}_main_switch
+      - select.set:
+          id: ${device}_mode_select
+          option: "main"
+  build_path: /config/esphome/build/bathroom_lustre
+
+#=========================== Параметры WiFi ==========================#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret bath_lustr_ip
+    gateway: 192.168.1.1
+    subnet: 255.255.255.0
+  fast_connect: true
+
+#========================= Параметры логгера =========================#
+logger:
+  baud_rate: 0
+
+#=========================== Параметры API ===========================#
+api:
+  encryption:
+    key: !secret ble_nas_api
+  reboot_timeout: 0s
+
+#=========================== Параметры OTA ===========================#
+ota:
+  - platform: esphome
+    password: !secret ble_nas_ota
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#=========================== Параметры UART ==========================#
+uart:
+  id: ${device}_uart
+  rx_pin: GPIO3
+  tx_pin: GPIO1
+  baud_rate: 115200
+
+#========================= Параметры Tuya MCU ========================#
+tuya:
+# Datapoint 101: enum    - режим работы (0,1,2?,3)
+# Datapoint 102: switch  - выключатель?
+# Datapoint 103: int     - ?
+# Datapoint  22: int     - яркость основного света (10-1000)
+# Datapoint  23: int     - температура основного света (0-1000)
+# Datapoint  24: string  - яркость и цвет RGB
+# Datapoint  26: int     - таймер выключения
+# Datapoint  20: switch  - главный выключатель
+
+#============================= Селекторы =============================#
+select:
+#------------------------ Выбор режима работы ------------------------#
+  - platform: "tuya"
+    id: ${device}_mode_select
+    name: "${devicename} Select mode"
+    enum_datapoint: 101
+    optimistic: true
+    options:
+      0: main
+      1: rgb
+      3: both
+    internal: true
+
+#============================== Сенсоры ==============================#
+sensor:
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+
+#=========================== Переключатели ===========================#
+switch:
+#-------------------- Включение/выключение люстры --------------------#
+  - platform: "tuya"
+    id: ${device}_main_switch
+    name: "${devicename} Main switch"
+    switch_datapoint: 20
+    icon: mdi:power
+
+#========================== Источники света ==========================#
+light:
+#--------------------- Диммер основного освещения --------------------#
+  - platform: "tuya"
+    id: ${device}_light_dim
+    name: "${devicename} Light dimmer"
+    dimmer_datapoint: 22
+    switch_datapoint: 20
+    color_temperature_datapoint: 23
+    color_interlock: true
+    color_temperature_invert: true
+    min_value: 0
+    max_value: 1000
+    color_temperature_max_value: 1000
+    cold_white_color_temperature: 5500 K
+    warm_white_color_temperature: 3000 K  
+    gamma_correct: 1
+    default_transition_length: 0s
+    icon: mdi:lightbulb-group
+#-------- Диммер RGB подсветки, которая, дрянь, не работает! ---------#
+#  - platform: "tuya"
+#    id: ${device}_rgb_dim
+#    name: "${devicename} RGB dimmer"
+#    color_interlock: true
+#    gamma_correct: 1
+#    default_transition_length: 0s
+#    switch_datapoint: 20
+#    color_datapoint: 24
+#    color_type: hsv
+#    icon: mdi:led-strip
+
+#========================= Текстовые сенсоры =========================#
+text_sensor:
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+
+#========================== Бинарные сенсоры =========================#
+binary_sensor:
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+
+#=============================== Кнопки ==============================#
+button:
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
