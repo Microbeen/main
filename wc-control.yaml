@@ -6,6 +6,21 @@ substitutions:
   update_adc: 30s
   update_flow: 15s
 
+#======================= Глобальные переменные =======================#
+globals:
+  - id: ${device}_filter_replace_date_glob
+    type: std::string
+    restore_value: yes
+  - id: ${device}_membrane_replace_date_glob
+    type: std::string
+    restore_value: yes
+  - id: ${device}_filter_replace_timestamp_glob
+    type: long int
+    restore_value: yes
+  - id: ${device}_membrane_replace_timestamp_glob
+    type: long int
+    restore_value: yes
+
 #============================== Тип ESP ==============================#
 esp32:
   board: esp32dev
@@ -24,6 +39,17 @@ esphome:
     board_upload.ram_size: 8MB
     board_upload.maximum_ram_size: 8388608
   build_path: /config/esphome/build/wc_control
+  on_boot:
+    priority: -100.0
+    then:
+      - text_sensor.template.publish:
+          id: ${device}_filter_replace_date
+          state: !lambda |-
+            return id(${device}_filter_replace_date_glob).c_str();
+      - text_sensor.template.publish:
+          id: ${device}_membrane_replace_date
+          state: !lambda |-
+            return id(${device}_membrane_replace_date_glob).c_str();            
 
 #=========================== Параметры WiFi ==========================#
 wifi:
@@ -47,21 +73,21 @@ api:
 
 #=========================== Параметры OTA ===========================#
 ota:
-  password: !secret wc_control_ota
+  - platform: esphome
+    password: !secret wc_control_ota
 
 #======================== Параметры отладчика ========================#
 debug:
   update_interval: ${update}
 
-
 #======================= Параметры 1wire/Dallas ======================#
-dallas:
-  - pin: 27
+one_wire:
+  - platform: gpio
+    pin: 27
     id: dallas_wire_1
-    update_interval: ${update}
-  - pin: 13
-    id: dallas_wire_2
-    update_interval: ${update}
+  - platform: gpio
+    pin: 13
+    id: dallas_wire_2 
 
 #=========================== Параметры I2C ===========================#   
 i2c:
@@ -206,23 +232,21 @@ sensor:
   - platform: adc
     id: ${device}_tds_adc_1
     pin: 32
-    attenuation: 11db
+    attenuation: 12db
     filters:
     - calibrate_linear:
         - 0.14 -> 0.0
         - 2.3 -> 2.3
-    internal: true
     update_interval: ${update_adc}
+    internal: true    
 #.............. Корректировка напряжения по температуре ..............#
   - platform: template
     id: ${device}_tds_vcomp_1
-    unit_of_measurement: 'V'
-    accuracy_decimals: 3
     lambda: |-
         return ((id(${device}_tds_adc_1).state) /
         (1 + (0.02 * ((id(${device}_temp_1).state) - 25.0))));
-    internal: true
     update_interval: ${update_adc}
+    internal: true    
 #............................ Рассчет TDS ............................#
   - platform: template
     id: ${device}_tds_1
@@ -247,23 +271,21 @@ sensor:
   - platform: adc
     id: ${device}_tds_adc_2
     pin: 33
-    attenuation: 11db
+    attenuation: 12db
     filters:
     - calibrate_linear:
         - 0.14 -> 0.0
         - 2.3 -> 2.3
-    internal: true
     update_interval: ${update_adc}
+    internal: true    
 #.............. Корректировка напряжения по температуре ..............#
   - platform: template
     id: ${device}_tds_vcomp_2
-    unit_of_measurement: 'V'
-    accuracy_decimals: 3
     lambda: |-
         return ((id(${device}_tds_adc_2).state) /
         (1 + (0.02 * ((id(${device}_temp_2).state) - 25.0))));
-    internal: true
     update_interval: ${update_adc}
+    internal: true    
 #............................ Рассчет TDS ............................#
   - platform: template
     id: ${device}_tds_2
@@ -319,43 +341,93 @@ sensor:
           drink_water  = x * 0.25 / 2145;
           return drink_water;
     update_interval: ${update_flow}
-#-------------------------------DS18B20-------------------------------#
-  - platform: dallas
-    dallas_id: dallas_wire_1
+#--------------------- Рассчет ресурса фильтров ----------------------#
+  - platform: template
+    id: ${device}_filter_resource
+    name: "${devicename} Filter resource"
+    unit_of_measurement: '%'
+    accuracy_decimals: 1
+    lambda: |-
+      float stamp_now = id(${device}_esptime).now().timestamp;
+      float stamp_replace = id(${device}_filter_replace_timestamp_glob);
+      float six_months = 15552000;
+      float end_time = (stamp_replace + six_months);
+      float remain_time = (end_time - stamp_now);
+      return ((remain_time / six_months) * 100);
+    update_interval: ${update}
+    icon: mdi:air-filter
+    state_class: measurement
+#--------------------- Рассчет ресурса мембраны ----------------------#
+  - platform: template
+    id: ${device}_membrane_resource
+    name: "${devicename} Membrane resource"
+    unit_of_measurement: '%'
+    accuracy_decimals: 1
+    lambda: |-
+      float stamp_now = id(${device}_esptime).now().timestamp;
+      float stamp_replace = id(${device}_filter_replace_timestamp_glob);
+      float twelve_months = 31104000;
+      float end_time = (stamp_replace + twelve_months);
+      float remain_time = (end_time - stamp_now);
+      return ((remain_time / twelve_months) * 100);
+    update_interval: ${update}
+    icon: mdi:air-filter
+    state_class: measurement
+#------------------------------ DS18B20 ------------------------------#
+#........................ Температура платы 1 ........................#
+  - platform: dallas_temp
+    one_wire_id: dallas_wire_1
     address: 0xeba2c66d0e64ff28
     id: ${device}_temp_1
     name: "${devicename} Board t° 1"
+    unit_of_measurement: "°C"
     device_class: "temperature"
-  - platform: dallas
-    dallas_id: dallas_wire_1
+    update_interval: ${update}
+#........................ Температура платы 2 ........................#
+  - platform: dallas_temp
+    one_wire_id: dallas_wire_1
     address: 0x5d86d96d0e64ff28
     id: ${device}_temp_2
     name: "${devicename} Board t° 2"
+    unit_of_measurement: "°C"
     device_class: "temperature"
-  - platform: dallas
-    dallas_id: dallas_wire_2
+    update_interval: ${update}
+#.............. Температура сырой воды на входе фильтра ..............#
+  - platform: dallas_temp
+    one_wire_id: dallas_wire_2
     address: 0xbc0417714ef0ff28
     id: ${device}_filter_raw_water_temp
     name: "${devicename} Raw water t°"
+    unit_of_measurement: "°C"
     device_class: "temperature"
-  - platform: dallas
-    dallas_id: dallas_wire_2
+    update_interval: ${update}
+#............ Температура питьевой воды на выходе фильтра ............#
+  - platform: dallas_temp
+    one_wire_id: dallas_wire_2
     address: 0x820417715827ff28 
     id: ${device}_filter_drink_water_temp
     name: "${devicename} Drink water t°"   #красная метка 
+    unit_of_measurement: "°C"
     device_class: "temperature"
-  - platform: dallas
-    dallas_id: dallas_wire_2
+    update_interval: ${update}
+#..................... Температура холодной воды .....................#
+  - platform: dallas_temp
+    one_wire_id: dallas_wire_2
     address: 0x0f68e46d0e64ff28
     id: ${device}_cold_water_temp
     name: "${devicename} Cold water t°"
+    unit_of_measurement: "°C"
     device_class: "temperature"
-  - platform: dallas
-    dallas_id: dallas_wire_2
+    update_interval: ${update}
+#..................... Температура горячей воды ......................#
+  - platform: dallas_temp
+    one_wire_id: dallas_wire_2
     address: 0x1fd07f6d0e64ff28
     id: ${device}_hot_water_temp
     name: "${devicename} Hot water t°"
+    unit_of_measurement: "°C"
     device_class: "temperature"
+    update_interval: ${update}
 #----------------- ESP32 внутренний датчик температуры ---------------#
   - platform: internal_temperature
     id: ${device}_int_temp
@@ -380,7 +452,6 @@ switch:
 #------------------------- Светодиод промывки ------------------------#
   - platform: gpio
     id: ${device}_gled1
-    name: "FLUSH LED"
     pin:
       pcf8574: pcf8574_1
       number: 3
@@ -391,7 +462,6 @@ switch:
 #----------------------- Светодиод набора воды -----------------------#
   - platform: gpio
     id: ${device}_gled2
-    name: "WATER SET LED"
     pin:
       pcf8574: pcf8574_1
       number: 2
@@ -402,7 +472,6 @@ switch:
 #----------------------- Светодиод полного бака ----------------------#
   - platform: gpio
     id: ${device}_gled3
-    name: "FULL TANK LED"
     pin:
       pcf8574: pcf8574_1
       number: 1
@@ -413,7 +482,6 @@ switch:
 #----------------- Светодиод отсутствия воды на входе ----------------#
   - platform: gpio
     id: ${device}_rled
-    name: "NO WATER LED"
     pin:
       pcf8574: pcf8574_1
       number: 0
@@ -436,7 +504,6 @@ switch:
 #-------------------------- Включение помпы --------------------------#
   - platform: gpio
     id: ${device}_pump
-    name: "PUMP"
     pin: 
       pcf8574: pcf8574_2
       number: 2
@@ -447,7 +514,6 @@ switch:
 #--------------------- Включение входного клапана --------------------#
   - platform: gpio
     id: ${device}_input_walve
-    name: "INPUT WALVE"
     pin:
       pcf8574: pcf8574_2
       number: 1
@@ -458,7 +524,6 @@ switch:
 #--------------------- Включение клапана промывки --------------------#
   - platform: gpio
     id: ${device}_flush_walve
-    name: "FLUSH WALVE"
     pin:
       pcf8574: pcf8574_2
       number: 0
@@ -490,6 +555,20 @@ text_sensor:
     id: ${device}_tank_text
     name: "${devicename} Tank"
     icon: mdi:storage-tank-outline
+#----------------------- Дата замены фильтров ------------------------#
+  - platform: template
+    id: ${device}_filter_replace_date
+    name: "${devicename} Filter replaced"
+    icon: mdi:clipboard-text-clock
+    entity_category: diagnostic
+    update_interval: ${update}
+#----------------------- Дата замены мембраны ------------------------#
+  - platform: template
+    id: ${device}_membrane_replace_date
+    name: "${devicename} Membrane replaced"
+    icon: mdi:clipboard-text-clock
+    entity_category: diagnostic
+    update_interval: ${update}
 
 #========================== Бинарные сенсоры =========================#
 binary_sensor:
@@ -596,4 +675,80 @@ button:
     on_press:
       then:
         - script.execute: ${device}_water_set_script
-    icon: mdi:shower-head
+    icon: mdi:water-sync
+#--------------- Кнопка установки даты замены фильтров ---------------#
+  - platform: template
+    id: ${device}_filter_replace
+    name: "${devicename} Filter replace"
+    on_press:
+      then:
+        - text_sensor.template.publish:
+            id: ${device}_filter_replace_date
+            state: !lambda |-
+              int day = (id(${device}_esptime).now().day_of_month);
+              int month = (id(${device}_esptime).now().month);
+              int year = (id(${device}_esptime).now().year);
+              return (
+                (day ? to_string(day) + "-" : "") +
+                (month ? to_string(month) + "-" : "") +
+                (year ? to_string(year) + " " : "")
+              ).c_str();
+        - globals.set:
+            id: ${device}_filter_replace_date_glob
+            value: !lambda |-
+              int day = (id(${device}_esptime).now().day_of_month);
+              int month = (id(${device}_esptime).now().month);
+              int year = (id(${device}_esptime).now().year);
+              return (
+                (day ? to_string(day) + "-" : "") +
+                (month ? to_string(month) + "-" : "") +
+                (year ? to_string(year) + " " : "")
+              ).c_str();
+        - globals.set:
+            id: ${device}_filter_replace_timestamp_glob
+            value: !lambda return (id(${device}_esptime).now().timestamp);
+    entity_category: config
+    icon: mdi:wrench-cog
+#--------------- Кнопка установки даты замены мембраны ---------------#
+  - platform: template
+    id: ${device}_membrane_replace
+    name: "${devicename} Membrane replace"
+    on_press:
+      then:
+        - text_sensor.template.publish:
+            id: ${device}_membrane_replace_date
+            state: !lambda |-
+              int day = (id(${device}_esptime).now().day_of_month);
+              int month = (id(${device}_esptime).now().month);
+              int year = (id(${device}_esptime).now().year);
+              return (
+                (day ? to_string(day) + "-" : "") +
+                (month ? to_string(month) + "-" : "") +
+                (year ? to_string(year) + " " : "")
+              ).c_str();
+        - globals.set:
+            id: ${device}_membrane_replace_date_glob
+            value: !lambda |-
+              int day = (id(${device}_esptime).now().day_of_month);
+              int month = (id(${device}_esptime).now().month);
+              int year = (id(${device}_esptime).now().year);
+              return (
+                (day ? to_string(day) + "-" : "") +
+                (month ? to_string(month) + "-" : "") +
+                (year ? to_string(year) + " " : "")
+              ).c_str();
+        - globals.set:
+            id: ${device}_membrane_replace_timestamp_glob
+            value: !lambda return (id(${device}_esptime).now().timestamp);
+    entity_category: config
+    icon: mdi:wrench-cog
+
+
+
+#********************** УСТАНОВЛЕННЫЕ КАРТРИДЖИ **********************#
+# K100 https://www.filter.ru/dlya-magistralnykh-filtrov/87-kartridzh-mekhanicheskoj-ochistki-k100.html
+# K205 https://www.filter.ru/dlya-filtrov-pod-mojku-i-ryadom-s-mojkoj/100-kartridzh-sorbcionnyj-k205.html
+# K101 https://www.filter.ru/dlya-sistem-obratnogo-osmosa/88-kartridzh-mekhanicheskoj-ochistki-k101.html
+# K869 https://www.filter.ru/dlya-sistem-obratnogo-osmosa/176-membrana-obratnoosmoticheskaya-k869.html
+# K886 x2 https://www.filter.ru/dlya-filtrov-pod-mojku-i-ryadom-s-mojkoj/164-kartridzh-tonkoj-ochistki-k886-postfiltr.html
+# K887 https://www.filter.ru/dlya-sistem-obratnogo-osmosa/118-kartridzh-mineralizator-k887-postfiltr.html
