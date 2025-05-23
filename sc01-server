@@ -1,0 +1,1684 @@
+#========================== Подстановка имен =========================#
+substitutions:
+  devicename: sc01-server
+  device: sc01_server
+  uart_p2p: uart_p2p
+  style: style
+  font: font
+  script: script
+  lvgl: lvgl
+  status_page: status_page
+  fan_page: fan_page
+  update: 60s
+
+#======================= Глобальные переменные =======================#
+globals:
+#------------------- Значения скорости вентиляторов ------------------#
+  - id: global_manual_fan_speed_values
+    type: int[16]
+    restore_value: yes
+#----------------------- ID кнопок вентиляторов ----------------------#
+  - id: fan_buttons_array
+    type: 'lv_obj_t**'
+    restore_value: no
+    initial_value: |
+      new lv_obj_t*[16] 
+        { ${lvgl}_fan_button_1,  ${lvgl}_fan_button_2,  ${lvgl}_fan_button_3,  ${lvgl}_fan_button_4,
+          ${lvgl}_fan_button_5,  ${lvgl}_fan_button_6,  ${lvgl}_fan_button_7,  ${lvgl}_fan_button_8,
+          ${lvgl}_fan_button_9,  ${lvgl}_fan_button_10, ${lvgl}_fan_button_11, ${lvgl}_fan_button_12,
+          ${lvgl}_fan_button_13, ${lvgl}_fan_button_14, ${lvgl}_fan_button_15, ${lvgl}_fan_button_16 }
+#---------------------- ID названий вентиляторов ---------------------#
+  - id: fan_labels_array
+    type: 'lv_obj_t**'
+    restore_value: no
+    initial_value: |
+      new lv_obj_t*[16] 
+        { ${lvgl}_fan_name_1, ${lvgl}_fan_name_2, ${lvgl}_fan_name_3, ${lvgl}_fan_name_4,
+          ${lvgl}_fan_name_5, ${lvgl}_fan_name_6, ${lvgl}_fan_name_7, ${lvgl}_fan_name_8,
+          ${lvgl}_fan_name_9, ${lvgl}_fan_name_10, ${lvgl}_fan_name_11, ${lvgl}_fan_name_12,
+          ${lvgl}_fan_name_13, ${lvgl}_fan_name_14, ${lvgl}_fan_name_15, ${lvgl}_fan_name_16 }
+
+#============================== Тип ESP ==============================#
+esp32:
+  board: esp32-s3-devkitc-1
+  flash_size: 16MB
+  framework:
+    type: esp-idf
+    sdkconfig_options:
+      CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      CONFIG_ESP32S3_DATA_CACHE_64KB: "y"
+      CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
+      CONFIG_SPIRAM_RODATA: y
+
+#========================== Параметры PSRAM ==========================#
+psram:
+  mode: quad
+  speed: 80MHZ
+
+#========================= Параметры прошивки ========================#
+esphome:
+  name: ${devicename}
+  project:
+    name: "Panlee.WT32-SC01 plus"
+    version: "0.0.1"
+  platformio_options:
+    build_unflags: -Werror=all
+    board_build.flash_mode: dio
+    board_build.flash_size: 16MB
+  build_path: /config/esphome/build/${devicename}
+  on_boot:
+    then:
+      - lambda: |-
+          auto call = id(${device}_backlight_pwm).turn_on();
+          call.set_brightness(1);
+          call.perform();
+      - number.set:
+          id: ${device}_backlight_slider
+          value: 100
+
+      - delay: 5s
+      - lvgl.widget.hide: boot_screen
+      - delay: 30s
+
+#========================= Внешние библиотеки ========================#
+external_components:
+  - source: github://pr#8230
+    components: [i80, io_bus, ili9xxx, spi]
+    refresh: 1h
+  - source: github://KG3RK3N/esphome-uart-p2p
+    components: [uart_p2p_transmitter, uart_p2p_receiver]
+    refresh: 1h
+
+#=========================== Параметры WiFi ==========================#
+wifi:
+  ssid: !secret ssid
+  password: !secret pass
+  manual_ip:
+    static_ip: !secret sc01_server_ip
+    gateway: !secret gate
+    subnet: !secret snet
+  fast_connect: true
+
+#========================= Параметры логгера =========================#
+logger:
+  baud_rate: 0
+
+#=========================== Параметры API ===========================#
+api:
+  encryption:
+    key: !secret sc01_server_api
+  reboot_timeout: 0s
+
+#=========================== Параметры OTA ===========================#
+ota:
+  - platform: esphome
+    password: !secret sc01_server_ota
+
+#======================== Параметры отладчика ========================#
+debug:
+  update_interval: ${update}
+
+#=========================== Параметры UART ==========================#
+uart:
+  - id: ${device}_uart
+    rx_pin: 44
+    tx_pin: 43
+    parity: EVEN
+    baud_rate: 57600
+    stop_bits: 2
+    debug:
+      direction: BOTH
+
+#=========================== Параметры I2C ===========================#   
+i2c:
+  sda: 6
+  scl: 5
+
+#===================== Настройка драйвера экрана =====================#
+i80:
+  dc_pin:
+    ignore_strapping_warning: true
+    number: 0
+  data_pins:
+    - 9
+    - ignore_strapping_warning: true
+      number: 46
+    - ignore_strapping_warning: true
+      number: 3
+    - 8
+    - 18
+    - 17
+    - 16
+    - 15
+  wr_pin: 47
+
+#========================== Параметры экрана =========================#
+display:
+  - platform: ili9xxx
+    id: ${device}_display
+    bus_type: i80
+    model: st7796
+    dimensions:
+      width: 320
+      height: 480
+    rotation: 90
+    reset_pin: 4
+    data_rate: 8MHz
+    color_order: bgr
+    invert_colors: true
+    auto_clear_enabled: false
+    update_interval: 1s
+    show_test_card: false
+
+#================= Параметры сенсорной панели экрана =================#
+touchscreen:
+  - platform: ft63x6
+    id: ${device}_touchscreen
+    interrupt_pin: 7
+    transform:
+      swap_xy: true
+      mirror_x: true
+    display: ${device}_display
+    on_touch:
+      - logger.log:
+            format: Touch at (%d, %d)
+            args: [touch.x, touch.y]
+      - if:
+          condition:
+            - script.is_running: ${script}_fan_button_uncheck_timer
+          then:
+            - script.stop: ${script}_fan_button_uncheck_timer
+            - script.execute: ${script}_fan_button_uncheck_timer
+      - lambda: |-
+            ESP_LOGI("cal", "x=%d, y=%d, x_raw=%d, y_raw=%0d",
+                touch.x,
+                touch.y,
+                touch.x_raw,
+                touch.y_raw
+                );
+
+#============== Синхронизация времени через Keenetic NTP =============#
+time:
+  - platform: sntp
+    id: ${device}_esptime
+    timezone: Europe/Moscow
+    servers:
+     - 192.168.1.1
+    on_time:
+      - hours: 2,3,4,5
+        minutes: 5
+        seconds: 0
+        then:
+          - switch.turn_on: ${device}_antiburn
+      - hours: 2,3,4,5
+        minutes: 35
+        seconds: 0
+        then:
+          - switch.turn_off: ${device}_antiburn
+
+#==================== Настройка выхода ШИМ-сигнала ===================#
+output:
+#-------------------------- Подсветка экрана -------------------------#
+  - platform: ledc
+    id: ${device}_backlight
+    pin: 
+      number: 45
+      ignore_strapping_warning: true
+    frequency: 100Hz
+
+#=========================== Переключатели ===========================#
+switch: 
+#----------- Включение режима защиты от выгорания пикселей -----------#
+  - platform: template
+    id: ${device}_antiburn
+    name: "${devicename} Screen antiburn"
+    optimistic: true    
+    entity_category: "config"
+    icon: mdi:television-shimmer    
+    turn_on_action:
+      - logger.log: "Starting Antiburn"
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - delay: 1s
+      - lvgl.pause:
+          show_snow: true
+    turn_off_action:
+      - logger.log: "Stopping Antiburn"
+      - if:
+          condition: lvgl.is_paused
+          then:
+            - lvgl.resume:
+            - lvgl.widget.redraw:
+            - delay: 1s
+
+#========================== Источники света ==========================#
+light:
+#--------------------- Включение подсветки экрана --------------------#  
+  - platform: monochromatic
+    name: "LIGHT LIGHT"
+    id: ${device}_backlight_pwm 
+    output: ${device}_backlight
+
+#============================= Селекторы =============================#
+select:
+#------------------ Выбор режима работы вентиляторов -----------------#
+  - platform: lvgl
+    id: ${device}_fan_mode_select
+    widget: ${lvgl}_fan_mode_select
+    name: "Fan mode select"
+    on_value:
+      - lambda: |-
+          if (id(${device}_fan_mode_select).state == "AUTO")
+            { for (int i = 0; i < 16; i++)
+              { lv_label_set_text(id(fan_labels_array)[i], "AUTO");
+                lv_obj_set_style_text_color(id(fan_labels_array)[i], lv_color_hex(0x67E300), LV_PART_MAIN);
+                lv_obj_clear_state(id(fan_buttons_array)[i], LV_STATE_CHECKED); }
+            lv_label_set_text(${lvgl}_fan_main_button_label, "\U000F171D");
+            lv_obj_set_style_text_color(${lvgl}_${status_page}_fan_button_label, lv_color_hex(0x67E300), LV_PART_MAIN);
+            lv_obj_set_style_text_color(${lvgl}_${fan_page}_fan_button, lv_color_hex(0x67E300), LV_PART_MAIN);
+            lv_obj_add_flag(${lvgl}_speed_set_obj, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(id(${lvgl}_fan_group_select).obj, LV_OBJ_FLAG_HIDDEN); }
+          if (id(${device}_fan_mode_select).state == "GROUP")
+            { for (int i = 0; i < 16; i++)
+              { lv_label_set_text(id(fan_labels_array)[i], "AUTO");
+                lv_obj_set_style_text_color(id(fan_labels_array)[i], lv_color_hex(0x67E300), LV_PART_MAIN);
+                lv_obj_clear_state(id(fan_buttons_array)[i], LV_STATE_CHECKED); }
+            lv_label_set_text(${lvgl}_fan_main_button_label, "\U000F171D");
+            lv_obj_set_style_text_color(${lvgl}_${status_page}_fan_button_label, lv_color_hex(0x67E300), LV_PART_MAIN);
+            lv_obj_set_style_text_color(${lvgl}_${fan_page}_fan_button, lv_color_hex(0x67E300), LV_PART_MAIN);
+            lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(id(${lvgl}_fan_group_select).obj, LV_OBJ_FLAG_HIDDEN); }
+#----------------- Выбор активной группы вентиляторов ----------------#
+  - platform: lvgl
+    id: ${device}_fan_group_select
+    widget: ${lvgl}_fan_group_select
+    internal: true
+    on_value:
+      - lambda: |-
+          sensor::Sensor *uart_sensors[] =
+            { id(uart_p2p_fan_speed_set_1), id(uart_p2p_fan_speed_set_2), id(uart_p2p_fan_speed_set_3),
+              id(uart_p2p_fan_speed_set_4), id(uart_p2p_fan_speed_set_5), id(uart_p2p_fan_speed_set_6),
+              id(uart_p2p_fan_speed_set_7), id(uart_p2p_fan_speed_set_8), id(uart_p2p_fan_speed_set_9),
+              id(uart_p2p_fan_speed_set_10), id(uart_p2p_fan_speed_set_11), id(uart_p2p_fan_speed_set_12),
+              id(uart_p2p_fan_speed_set_13), id(uart_p2p_fan_speed_set_14), id(uart_p2p_fan_speed_set_15),
+              id(uart_p2p_fan_speed_set_16) };
+          if (id(${device}_fan_mode_select).state == "GROUP")
+            { if (id(${device}_fan_group_select).state == "LEFT")
+              { lv_obj_set_style_text_color(${lvgl}_fan_group_label_1, lv_color_hex(0xFF0000), LV_PART_MAIN);
+                for (int i = 0; i < 5; i++)
+                  { lv_obj_add_flag(id(fan_buttons_array)[i], LV_STATE_CHECKED); }}}
+
+#========================= Числовые объекты ==========================#
+number:
+#----------------- Ручная регулировка яркости экрана -----------------#
+  - platform: template
+    id: ${device}_backlight_slider
+    name: "${devicename} Backlight"
+    optimistic: true
+    mode: slider
+    min_value: 0
+    max_value: 100
+    step: 10
+    on_value:
+      - then:
+        - lambda: |-
+              auto call = id(${device}_backlight_pwm).turn_on();
+              call.set_brightness(x*0.01);
+              call.perform();
+    unit_of_measurement: "%"
+
+#============================== Скрипты ==============================#
+script:
+#-------------- Отображение иконки приема данных по UART -------------#
+  - id: ${script}_RX_link
+    mode: parallel
+    then:
+      - lvgl.label.update:
+          id: ${lvgl}_RX_link
+          text_color: 0x9FEE00
+      - delay: 200ms
+      - lvgl.label.update:
+          id: ${lvgl}_RX_link
+          text_color: 0x1c1c1c
+#------------- Отображение иконки пердачи данных по UART -------------#
+  - id: ${script}_TX_link
+    mode: parallel
+    then:
+      - lvgl.label.update:
+          id: ${lvgl}_TX_link
+          text_color: 0xFF0000
+      - delay: 200ms
+      - lvgl.label.update:
+          id: ${lvgl}_TX_link
+          text_color: 0x1c1c1c
+#----------------- Снятие выделения неактивных кнопок ----------------#
+  - id: ${script}_fan_button_uncheck
+    mode: single
+    parameters:
+      button: int
+    then:
+      - lambda: |-
+          for (int i = 0; i < 16; i++) 
+            { if (i != button)
+              { lv_obj_clear_state(id(fan_buttons_array)[i], LV_STATE_CHECKED); } }
+#----------- Снятие выделения неактивных кнопок по таймеру -----------#
+  - id: ${script}_fan_button_uncheck_timer
+    mode: restart
+    then:
+      - delay: 120s
+      - lambda: |-
+          for (int i = 0; i < 16; i++) 
+            { lv_obj_clear_state(id(fan_buttons_array)[i], LV_STATE_CHECKED); }
+          lv_obj_add_flag(${lvgl}_speed_set_obj, LV_OBJ_FLAG_HIDDEN);
+
+#============================== Сенсоры ==============================#
+sensor:
+#----------------------- Мощность сигнала WiFi -----------------------#
+  - <<: !include add_config/wifi_strength.config.yaml
+#--------------------- Конвертация времени работы --------------------#
+  - <<: !include add_config/uptime_convert.config.yaml
+#---------------- ESP32 внутренний датчик температуры ----------------#
+  - <<: !include add_config/esp32_internal_temp.config.yaml
+
+#------------- Настройка скорости вращения вентилятора 1 -------------#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_1
+    name: "fan_speed_set_1"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 2 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_2
+    name: "fan_speed_set_2"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 3 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_3
+    name: "fan_speed_set_3"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 4 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_4
+    name: "fan_speed_set_4"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 5 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_5
+    name: "fan_speed_set_5"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 6 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_6
+    name: "fan_speed_set_6"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 7 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_7
+    name: "fan_speed_set_7"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 8 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_8
+    name: "fan_speed_set_8"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 9 .............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_9
+    name: "fan_speed_set_9"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 10 ............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_10
+    name: "fan_speed_set_10"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 11 ............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_11
+    name: "fan_speed_set_11"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 12 ............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_12
+    name: "fan_speed_set_12"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 13 ............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_13
+    name: "fan_speed_set_13"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 14 ............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_14
+    name: "fan_speed_set_14"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#............. Настройка скорости вращения вентилятора 15 ............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_15
+    name: "fan_speed_set_15"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+    internal: true
+#............. Настройка скорости вращения вентилятора 16 ............#
+  - platform: template
+    id: ${uart_p2p}_fan_speed_set_16
+    name: "fan_speed_set_16"
+    on_value:
+        then:
+        - script.execute: ${script}_TX_link
+#    internal: true
+
+#=================== Сенсоры для передачи по UART ====================#
+uart_p2p_transmitter:
+  uart_id: ${device}_uart
+#------------------------------ Сенсоры ------------------------------#
+  sensors:
+#............. Настройка скорости вращения вентилятора 1 .............#
+    - sensor_id: ${uart_p2p}_fan_speed_set_1
+      address: 0xA1
+
+#========================= Текстовые сенсоры =========================#
+text_sensor:
+#---------------------------- Время работы ---------------------------#
+  - <<: !include add_config/uptime.config.yaml
+#------------------------- Информация о сети -------------------------#
+  - <<: !include add_config/wifi_info.config.yaml
+#----------------------- Причина перезагрузки ------------------------#
+  - <<: !include add_config/reset_reason.config.yaml
+#----------------- Сенсор режима работы вентиляторов -----------------# 
+  - platform: template
+    id: ${device}_fan_work_mode
+    internal: True
+
+#========================== Бинарные сенсоры =========================#
+binary_sensor:
+#------------------------- Статус подключения ------------------------#
+  - <<: !include add_config/status.config.yaml
+
+#=============================== Кнопки ==============================#
+button:
+#----------------------- Удаленный рестарт ESP -----------------------#
+  - <<: !include add_config/restart.config.yaml
+
+
+#===================== Экран / настройка шрифтов =====================#
+font:
+
+  - file: 'fonts/HaginCapsMedium.ttf'
+    id: ${font}_boot_screen
+    size: 30
+    bpp: 4
+    glyphs: !include add_config/glyphs.include.yaml
+
+  - file: 'fonts/HaginCapsMedium.ttf'
+    id: ${font}_header
+    size: 20
+    bpp: 4
+    glyphs: !include add_config/glyphs.include.yaml
+
+  - file: 'fonts/HaginCapsMedium.ttf'
+    id: ${font}_fan_mode
+    size: 15
+    bpp: 4
+    glyphs: !include add_config/glyphs.include.yaml
+
+  - file: 'fonts/HaginCapsMedium.ttf'
+    id: ${font}_fan_speed
+    size: 18
+    bpp: 4
+    glyphs: !include add_config/glyphs.include.yaml
+
+  - file: 'fonts/HaginCapsMedium.ttf'
+    id: ${font}_dropdown
+    size: 25
+    bpp: 4
+
+
+  - file: "gfonts://Roboto"
+    id: ${font}_main_icon
+    size: 50
+    bpp: 4
+    extras:
+      - file: 'fonts/materialdesignicons.ttf'
+        glyphs: [
+          "\U000F048B", #server icon
+          "\U000F0510", #thermometer icon
+          "\U000F02CA", #hard disk icon
+          "\U000F171D", #fan auto icon
+          "\U000F1A3A", #fan clock icon
+          "\U000F081D", #fan off icon 
+          "\U000F146C", #fan alert icon
+          "\U000F0493", #settings icon
+          "\U000F0419", #plus icon
+          "\U000F0377", #minus icon
+          ]
+  
+  - file: "gfonts://Roboto"
+    id: ${font}_fan_speed_set
+    size: 25
+    bpp: 4
+    extras:
+      - file: 'fonts/materialdesignicons.ttf'
+        glyphs: [
+          "\U000F0419", #plus icon
+          "\U000F0377", #minus icon
+          ]
+
+  - file: "gfonts://Roboto"
+    id: ${font}_link_icon
+    size: 20
+    bpp: 4
+    extras:
+      - file: 'fonts/materialdesignicons.ttf'
+        glyphs: [
+          "\U000F0BCE", #link icon
+          ]
+
+image:
+  
+  - file: 'images/ha_logo.png'
+    id: boot_logo
+    resize: 150x200
+    type: RGB565
+    transparency: alpha_channel
+
+#======================= Экран / настройка LVGL ======================#
+lvgl:
+
+  displays:
+    - ${device}_display
+  touchscreens:
+    - ${device}_touchscreen
+
+  disp_bg_color: 0x0c0c0c
+  theme:
+    button:
+      bg_color: 0x1c1c1c
+      bg_opa: 95%
+      border_color: 0x828282
+      border_width: 1
+      text_color: 0xFFFFFF
+      pressed:
+        bg_color: 0x111111
+        bg_grad_color: 0x111111
+      checked:
+        bg_color: 0x493d17
+        bg_grad_color: 0x493d17
+        text_color: 0xfffc107
+    dropdown:
+      bg_color: 0x1c1c1c
+      bg_opa: 95%
+      border_color: 0x828282
+      border_width: 1
+      text_color: 0xFFFFFF
+      pressed:
+        bg_color: 0x111111
+        bg_grad_color: 0x111111
+      checked:
+        bg_color: 0x493d17
+        bg_grad_color: 0x493d17
+        text_color: 0xfffc107
+    spinbox:
+      bg_color: 0x1c1c1c
+      border_color: 0x828282
+      border_width: 1
+      text_color: 0xFFFFFF
+      text_align: CENTER
+    switch:
+      bg_color: 0xC0C0C0
+      bg_grad_color: 0xb0b0b0
+      bg_grad_dir: VER
+      bg_opa: COVER
+      checked:
+        bg_color: 0x1d5f96
+        bg_grad_color: 0x03324A
+        bg_grad_dir: VER
+        bg_opa: COVER
+      knob:
+        bg_color: 0xFFFFFF
+        bg_grad_color: 0xC0C0C0
+        bg_grad_dir: VER
+        bg_opa: COVER
+    slider:
+      border_width: 1
+      border_opa: 30%
+      bg_color: 0x9c9c9c
+      bg_opa: 15%
+      indicator:
+        bg_color: 0x333333
+        bg_grad_color: 0x333333
+        bg_opa: COVER
+      knob:
+        bg_color: 0x444444
+        bg_grad_color: 0x444444
+        bg_opa: COVER
+        border_color: 0x444444
+        border_width: 1
+        text_color: 0xFFFFFF
+#-------------------------------------------
+  style_definitions:
+    - id: ${style}_header
+      bg_color: 0x076DAD
+      bg_grad_color: 0x076DAD
+      bg_grad_dir: VER
+      bg_opa: COVER
+      border_width: 0
+      radius: 0
+      pad_all: 0
+      pad_row: 0
+      pad_column: 0
+      border_color: 0x333333
+      text_color: 0xFFFFFF
+      width: 100%
+      height: 22
+    - id: ${style}_fan_control_widget
+      align: CENTER
+      bg_opa: TRANSP
+      border_width: 0
+      bg_color: 0x1c1c1c
+      border_color: 0x828282
+      text_color: 0xFFFFFF
+    - id: ${style}_speed_set_obj
+      align: BOTTOM_MID
+      pad_top: 4
+      pad_left: 17
+      border_width: 1
+      bg_color: 0x1c1c1c
+      border_color: 0x828282
+      text_color: 0xFFFFFF
+      bg_opa: 95%
+    - id: ${style}_fan_group_label
+      grid_cell_x_align: STRETCH
+      grid_cell_y_align: STRETCH
+      text_align: CENTER
+      text_color: 0xFFFFFF
+    - id: ${style}_fan_button
+      grid_cell_x_align: STRETCH
+      grid_cell_y_align: STRETCH
+      outline_width: 0
+    - id: ${style}_fan_mode
+      align: TOP_MID
+      text_font: ${font}_fan_mode
+      text_align: RIGHT
+    - id: ${style}_fan_speed
+      align: BOTTOM_MID
+      text_font: ${font}_fan_speed
+      text_align: RIGHT
+
+#-------------------------------------------
+  top_layer:
+    widgets:
+      - obj:
+           align: TOP_MID
+           styles: ${style}_header
+           scrollable: false
+           scrollbar_mode: "OFF"
+           widgets:
+             - label:
+                 id: ${lvgl}_header
+                 text_font: ${font}_header
+                 text: "-"
+                 align: CENTER
+                 text_align: CENTER
+      - label:
+          id: ${lvgl}_RX_link
+          align: top_right
+          x: -4
+          y: 1
+          text_font: ${font}_link_icon
+          text: "\U000F0BCE"
+          text_align: right
+      - label:
+          id: ${lvgl}_TX_link
+          align: top_right
+          x: -20
+          y: 1
+          text_font: ${font}_link_icon
+          text: "\U000F0BCE"
+          text_align: right
+      - obj:
+          id: boot_screen
+          x: 0
+          y: 0
+          width: 100%
+          height: 100%
+          bg_color: 0x000000
+          bg_opa: COVER
+          radius: 0
+          pad_all: 0
+          border_width: 0
+          widgets:
+            - image:
+                align: CENTER
+                src: boot_logo
+                y: -50
+            - spinner:
+                align: CENTER
+                y: 95
+                height: 50
+                width: 50
+                spin_time: 1s
+                arc_length: 60deg
+                arc_width: 8
+                indicator:
+                  arc_color: 0x18bcf2
+                  arc_width: 8
+            - label:
+                text_font: ${font}_boot_screen
+                align: CENTER
+                y: 45
+                text: "@CrazyBober tehnology"
+                text_color: 0xFFFFFF
+          on_press:
+            - lvgl.widget.hide: boot_screen
+
+
+  page_wrap: true
+  pages:
+    - id: ${lvgl}_status_page
+      scrollable: false
+      scrollbar_mode: "OFF"
+      bg_color: 0x0c0c0c
+      widgets:
+        - button:
+            id: ${lvgl}_${status_page}_status_button
+            x: 410
+            y: 30
+            width: 65
+            height: 65
+            checkable: false
+            widgets:
+              - label:
+                  text_font: ${font}_main_icon
+                  text: "\U000F048B"
+                  x: 1
+                  y: 5
+                  align: CENTER
+
+        - button:
+            id: ${lvgl}_${status_page}_fan_button
+            x: 410
+            y: 100
+            width: 65
+            height: 65
+            checkable: false
+            widgets:
+              - label:
+                  id: ${lvgl}_${status_page}_fan_button_label
+                  text_font: ${font}_main_icon
+                  text: "\U000F171D"
+                  x: 1
+                  y: 5
+                  align: CENTER
+            on_click:
+              - lvgl.page.show: ${lvgl}_fan_page
+              - lvgl.label.update:
+                  id: ${lvgl}_header
+                  text: "ВЕНТИЛЯТОРЫ"
+
+        - button:
+            x: 410
+            y: 170
+            width: 65
+            height: 65
+            checkable: false
+            id: btn_1_3_1
+            widgets:
+              - label:
+                  text_font: ${font}_main_icon
+                  text: "\U000F0510"
+                  x: 1
+                  y: 5
+                  align: CENTER
+
+        - button:
+            x: 410
+            y: 240
+            width: 65
+            height: 65
+            checkable: false
+            id: btn_1_4_1
+            widgets:
+              - label:
+                  text_font: ${font}_main_icon
+                  text: "\U000F02CA"
+                  x: 1
+                  y: 5
+                  align: CENTER
+
+
+#======================================================================
+    - id: ${lvgl}_fan_page
+      scrollable: false
+      scrollbar_mode: "OFF"
+      bg_color: 0x0c0c0c
+      widgets:
+        - button:
+            id: ${lvgl}_${fan_page}_status_button
+            x: 410
+            y: 30
+            width: 65
+            height: 65
+            checkable: false
+            widgets:
+              - label:
+                  text_font: ${font}_main_icon
+                  text: "\U000F048B"
+                  x: 1
+                  y: 5
+                  align: CENTER
+            on_click:
+              - lvgl.page.show: ${lvgl}_status_page
+              - lvgl.label.update:
+                  id: ${lvgl}_header
+                  text: "СТАТУС СЕРВЕРА"
+
+        - button:
+            id: ${lvgl}_${fan_page}_fan_button
+            x: 410
+            y: 100
+            width: 65
+            height: 65
+            checkable: false
+            widgets:
+              - label:
+                  id: ${lvgl}_fan_main_button_label
+                  text_font: ${font}_main_icon
+                  text: "\U000F171D"
+                  x: 1
+                  y: 5
+                  align: CENTER
+
+        - button:
+            x: 410
+            y: 170
+            width: 65
+            height: 65
+            checkable: false
+            id: btn_1_3_2
+            widgets:
+              - label:
+                  text_font: ${font}_main_icon
+                  text: "\U000F0510"
+                  x: 1
+                  y: 5
+                  align: CENTER
+
+        - button:
+            x: 410
+            y: 240
+            width: 65
+            height: 65
+            checkable: false
+            id: btn_1_4_2
+            widgets:
+              - label:
+                  text_font: ${font}_main_icon
+                  text: "\U000F02CA"
+                  x: 1
+                  y: 5
+                  align: CENTER
+
+
+        - obj:
+            id: fan_widget
+            align: CENTER
+            width: 400
+            height: 320
+            x: -35
+            y: 7
+            bg_opa: TRANSP
+            border_opa: TRANSP
+            layout:
+              type: GRID
+              grid_columns: [69px, 69px, 69px, 69px, 69px]
+              grid_rows: [FR(6), FR(19), FR(19), FR(19), FR(19), FR(19)]
+              pad_row: 3
+              pad_column: 3
+
+
+            widgets:
+              - label:
+                  id: ${lvgl}_fan_group_label_1
+                  styles: ${style}_fan_group_label 
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 0
+                  text: "LEFT"
+
+              - button:
+                  id: ${lvgl}_fan_button_1
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 1
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(0);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[0]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_1
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_1
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_1
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_1
+                          align: OUT_BOTTOM_MID
+                          y: 1
+ 
+              - button:
+                  id: ${lvgl}_fan_button_2
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 2
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(1);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[1]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_2
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_2
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_2
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_2
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+              - button:
+                  id: ${lvgl}_fan_button_3
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 3
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(2);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[2]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_3
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_3
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_3
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_3
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+              - button:
+                  id: ${lvgl}_fan_button_4
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 4
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(3);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[3]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_4
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_4
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_4
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_4
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+              - button:
+                  id: ${lvgl}_fan_button_5
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 0
+                  grid_cell_row_pos: 5
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(4);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[4]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_5
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_5
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_5
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_5
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+
+              - label:
+                  id: ${lvgl}_fan_group_label_2
+                  styles: ${style}_fan_group_label
+                  grid_cell_column_pos: 1
+                  grid_cell_row_pos: 0
+                  text: "CPU"  
+
+              - button:
+                  id: ${lvgl}_fan_button_6
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 1
+                  grid_cell_row_pos: 1
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(5);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[5]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_6
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_6
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_6
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_6
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+              - button:
+                  id: ${lvgl}_fan_button_7
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 1
+                  grid_cell_row_pos: 2
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(6);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[6]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_7
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_7
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_7
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_7
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+
+              - label:
+                  id: ${lvgl}_fan_group_label_3
+                  styles: ${style}_fan_group_label 
+                  grid_cell_column_pos: 2
+                  grid_cell_row_pos: 0
+                  text: "CENTER"
+
+              - button:
+                  id: ${lvgl}_fan_button_8
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 2
+                  grid_cell_row_pos: 1
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(7);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[7]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_8
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_8
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_8
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_8
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+              - button:
+                  id: ${lvgl}_fan_button_9
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 2
+                  grid_cell_row_pos: 2
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(8);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[8]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_9
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_9
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_9
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_9
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+
+              - label:
+                  id: ${lvgl}_fan_group_label_4
+                  styles: ${style}_fan_group_label 
+                  grid_cell_column_pos: 3
+                  grid_cell_row_pos: 0
+                  text: "HDD"  
+
+              - button:
+                  id: ${lvgl}_fan_button_10
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 3
+                  grid_cell_row_pos: 1
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(9);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[9]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_10
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_10
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_10
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_10
+                          align: OUT_BOTTOM_MID
+                          y: 1
+ 
+              - button:
+                  id: ${lvgl}_fan_button_11
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 3
+                  grid_cell_row_pos: 2
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(10);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[10]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_11
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_11
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_11
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_11
+                          align: OUT_BOTTOM_MID
+                          y: 1
+ 
+
+              - label:
+                  id: ${lvgl}_fan_group_label_5
+                  styles: ${style}_fan_group_label 
+                  grid_cell_column_pos: 4
+                  grid_cell_row_pos: 0
+                  text: "RIGHT"
+
+              - button:
+                  id: ${lvgl}_fan_button_12
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 4
+                  grid_cell_row_pos: 1
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(11);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[11]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_12
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_12
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_12
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_12
+                          align: OUT_BOTTOM_MID
+                          y: 1
+ 
+              - button:
+                  id: ${lvgl}_fan_button_13
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 4
+                  grid_cell_row_pos: 2
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(12);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[12]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_13
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_13
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_13
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_13
+                          align: OUT_BOTTOM_MID
+                          y: 1
+ 
+              - button:
+                  id: ${lvgl}_fan_button_14
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 4
+                  grid_cell_row_pos: 3
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(13);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[13]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_14
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_14
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_14
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_14
+                          align: OUT_BOTTOM_MID
+                          y: 1
+ 
+              - button:
+                  id: ${lvgl}_fan_button_15
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 4
+                  grid_cell_row_pos: 4
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(14);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[14]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_15
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_15
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_15
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_15
+                          align: OUT_BOTTOM_MID
+                          y: 1
+ 
+              - button:
+                  id: ${lvgl}_fan_button_16
+                  styles: ${style}_fan_button
+                  grid_cell_column_pos: 4
+                  grid_cell_row_pos: 5
+                  checkable: true
+                  on_click:
+                    then:
+                      - lambda: |-
+                          id(${script}_fan_button_uncheck_timer).execute();
+                          id(${script}_fan_button_uncheck).execute(15);
+                          lv_obj_clear_flag(id(${lvgl}_speed_set_obj), LV_OBJ_FLAG_HIDDEN);
+                          lv_spinbox_set_value(id(${lvgl}_spinbox), id(global_manual_fan_speed_values)[15]);
+
+                  widgets:
+                    - label:
+                        id: ${lvgl}_fan_name_16
+                        styles: ${style}_fan_mode
+                        text: "____"
+                        align_to:
+                          id: ${lvgl}_fan_speed_16
+                          align: OUT_TOP_MID
+                          y: 7
+                    - label:
+                        id: ${lvgl}_fan_speed_16
+                        styles: ${style}_fan_speed
+                        align_to:
+                          id: ${lvgl}_fan_name_16
+                          align: OUT_BOTTOM_MID
+                          y: 1
+
+
+
+        - obj:
+            id: fan_control_widget
+            styles: ${style}_fan_control_widget
+            width: 200
+            height: 150
+            x: -39
+            y: 70
+            scrollable: false
+            scrollbar_mode: "OFF"
+            widgets:
+              - dropdown:
+                  id: ${lvgl}_fan_mode_select
+                  x: 0
+                  y: -12
+                  width: 190
+                  height: 40
+                  align: TOP_MID
+                  dir: TOP
+#                  text_font: ${device}_dropdown_font
+                  text_align: CENTER
+                  options:
+                    - "AUTO"
+                    - "MANUAL"
+                    - "GROUP"
+                  selected_index: 0
+                  on_value:
+                    then:
+                      - lvgl.resume:
+                      - lvgl.widget.redraw:
+
+
+              - dropdown:
+                  id: ${lvgl}_fan_group_select
+                  x: 0
+                  y: 35
+                  width: 190
+                  height: 40
+                  align: TOP_MID
+                  dir: TOP
+#                  text_font: ${device}_dropdown_font
+                  text_align: CENTER
+                  options:
+                    - "LEFT"
+                    - "CPU"
+                    - "CENTER"
+                    - "HDD"
+                    - "RIGHT"
+                  selected_index: 0
+                  on_value:
+                    then:
+                      - lvgl.resume:
+                      - lvgl.widget.redraw:
+
+
+              - obj:
+                  id: ${lvgl}_speed_set_obj
+                  styles: ${style}_speed_set_obj
+                  x: 0
+                  y: 16
+                  layout:
+                    type: FLEX
+                    flex_flow: ROW
+                    flex_align_cross: CENTER
+                  width: 190
+                  height: 52
+                  scrollable: false
+                  scrollbar_mode: "OFF"
+                  widgets:
+                    - button:
+                        id: ${lvgl}_spin_down
+                        width: 36
+                        height: 36
+                        pad_all: 5
+                        on_click:
+                          - lambda: |-
+                              ESP_LOGI("fan_mode", "Текущее значение режима: %s", id(${device}_fan_mode_select).state.c_str());
+                              if (id(${device}_fan_mode_select).state != "MANUAL") { 
+                                auto call = id(${device}_fan_mode_select).make_call();
+                                call.set_option("MANUAL");
+                                call.perform(); 
+                              }
+
+                              lv_spinbox_decrement(id(lvgl_spinbox));
+                              for (int i = 0; i < 16; i++) {
+                                if (lv_obj_has_state(id(fan_buttons_array)[i], LV_STATE_CHECKED))
+                                  { ESP_LOGE("main", "ЗНАЧЕНИЕ КНОПКИ %d УМЕНЬШЕНО", i + 1); } }
+
+                        widgets:
+                          - label:
+                              text_align: CENTER
+                              text_font: ${font}_fan_speed_set
+                              text: "\U000F0377"
+
+                    - spinbox:
+                        id: ${lvgl}_spinbox
+                        width: 60
+                        align: CENTER
+                        range_from: 20
+                        range_to: 100
+                        step: 2
+                        rollover: false
+                        digits: 3
+                        decimal_places: 0
+
+                        on_value:
+                          then:
+                            - lambda: |-
+
+                                sensor::Sensor *uart_sensors[] = {
+                                  id(uart_p2p_fan_speed_set_1), id(uart_p2p_fan_speed_set_2), id(uart_p2p_fan_speed_set_3), id(uart_p2p_fan_speed_set_4),
+                                  id(uart_p2p_fan_speed_set_5), id(uart_p2p_fan_speed_set_6), id(uart_p2p_fan_speed_set_7), id(uart_p2p_fan_speed_set_8),
+                                  id(uart_p2p_fan_speed_set_9), id(uart_p2p_fan_speed_set_10), id(uart_p2p_fan_speed_set_11), id(uart_p2p_fan_speed_set_12),
+                                  id(uart_p2p_fan_speed_set_13), id(uart_p2p_fan_speed_set_14), id(uart_p2p_fan_speed_set_15), id(uart_p2p_fan_speed_set_16)
+                                };
+
+                                for (int i = 0; i < 16; i++) {
+                                  if (lv_obj_has_state(id(fan_buttons_array)[i], LV_STATE_CHECKED)) {
+                                    auto spinbox = id(${lvgl}_spinbox);
+                                    int value = lv_spinbox_get_value(spinbox);
+                                    std::string fan_speed = std::to_string(value) + "%";
+                                    lv_label_set_text(id(fan_labels_array)[i], fan_speed.c_str());
+                                    lv_obj_set_style_text_color(id(fan_labels_array)[i], lv_color_hex(0xFFD300), LV_PART_MAIN);
+                                    uart_sensors[i]->publish_state(value);
+                                    id(global_manual_fan_speed_values)[i] = value; }
+                                }
+
+                    - button:
+                        id: ${lvgl}_spin_up
+                        width: 36
+                        height: 36
+                        pad_all: 5
+                        on_click:
+                          - lambda: |-
+                              ESP_LOGI("fan_mode", "Текущее значение режима: %s", id(${device}_fan_mode_select).state.c_str());
+                              if (id(${device}_fan_mode_select).state != "MANUAL") { 
+                                auto call = id(${device}_fan_mode_select).make_call();
+                                call.set_option("MANUAL");
+                                call.perform(); 
+                              }
+                              lv_spinbox_increment(id(lvgl_spinbox));
+                              for (int i = 0; i < 16; i++) {
+                                if (lv_obj_has_state(id(fan_buttons_array)[i], LV_STATE_CHECKED))
+                                  { ESP_LOGE("main", "ЗНАЧЕНИЕ КНОПКИ %d УВЕЛИЧЕНО", i + 1); } }
+
+                        widgets:
+                          - label:
+                              text_align: CENTER
+                              text_font: ${font}_fan_speed_set
+                              text: "\U000F0419"
