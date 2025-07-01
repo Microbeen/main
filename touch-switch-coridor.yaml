@@ -476,7 +476,7 @@ script:
             { fog_hail_icon = id(${image}_icon_fog)->get_lv_img_dsc(); }
           else if (condition == "hail") 
             { condition_icon = get_icon_by_cover(id(${image}_icon_hail_12)->get_lv_img_dsc(), id(${image}_icon_hail_3)->get_lv_img_dsc()); }
-          else if (amount > 0) // Обрабатываем все осадки
+          else if (amount > 0)
             { if (condition == "rainy")
               { if (amount > 1.6) 
                   { condition_icon = get_icon_by_cover(id(${image}_icon_rain_heavy_12)->get_lv_img_dsc(), id(${image}_icon_rain_heavy_3)->get_lv_img_dsc()); }
