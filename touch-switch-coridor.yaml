@@ -1,8 +1,7 @@
-#========================== Подстановка имен =========================#
+##################################### Подстановка имен ####################################
 substitutions:
   devicename: touch-switch-coridor
   device: touch_switch_coridor
-  glob: globals
   style: style
   font: font
   script: script
@@ -11,14 +10,7 @@ substitutions:
   lvgl: lvgl
   update: 60s
 
-#======================= Глобальные переменные =======================#
-globals:
-#-------------------------- Счетчик прошивок -------------------------#
-  - id: ${device}_firmware_counter
-    type: int
-    restore_value: yes
-
-#============================== Тип ESP ==============================#
+######################################### Тип ESP #########################################
 esp32:
   board: esp32-s3-devkitc-1
   variant: esp32s3
@@ -32,12 +24,12 @@ esp32:
       CONFIG_SPIRAM_FETCH_INSTRUCTIONS: y
       CONFIG_SPIRAM_RODATA: y
 
-#========================= Конфигурация PSRAM ========================#
+#################################### Конфигурация PSRAM ###################################
 psram:
   mode: octal
   speed: 80MHz
 
-#========================= Параметры прошивки ========================#
+#################################### Параметры прошивки ###################################
 esphome:
   name: ${devicename}
   project:
@@ -53,6 +45,7 @@ esphome:
         - delay: 5s
         - lvgl.widget.hide: boot_screen
         - lambda: |-
+            id(${script}_weather_widget_update_load).execute();
             lv_obj_add_flag(id(${lvgl}_hood_off_button), LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(id(${lvgl}_hood_speed_1_button), LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(id(${lvgl}_hood_speed_2_button), LV_OBJ_FLAG_HIDDEN);
@@ -63,9 +56,9 @@ esphome:
             auto call = id(${device}_backlight_dim).make_call();
             call.set_value(100);
             call.perform();
-  build_path: /config/esphome/build/touchscreen_2
+  build_path: /config/esphome/build/${device}
 
-#=========================== Параметры WiFi ==========================#
+###################################### Параметры WiFi #####################################
 wifi:
   ssid: !secret ssid
   password: !secret pass
@@ -76,36 +69,32 @@ wifi:
   fast_connect: true
   reboot_timeout: 0s
 
-#========================= Параметры логгера =========================#
+#################################### Параметры логгера ####################################
 logger:
   baud_rate: 0
 
-#=========================== Параметры API ===========================#
+###################################### Параметры API ######################################
 api:
   encryption:
-    key: !secret touchscreen_1_api
+    key: !secret api_key
   reboot_timeout: 0s
 
-#=========================== Параметры OTA ===========================#
+###################################### Параметры OTA ######################################
 ota:
   - platform: esphome
-    password: !secret touchscreen_1_ota
-    on_end:
-      then:
-        lambda: |-
-          id(${device}_firmware_counter) += 1;
+    password: !secret touchscreen_2_ota
 
-#======================== Параметры отладчика ========================#
+################################### Параметры отладчика ###################################
 debug:
   update_interval: ${update}
 
-#=========================== Параметры SPI ===========================#
+###################################### Параметры SPI ######################################
 spi:
   - id: ${device}_spi
     clk_pin: GPIO48
     mosi_pin: GPIO47
 
-#=========================== Параметры I2C ===========================#
+###################################### Параметры I2C ######################################
 i2c:
   - id: ${device}_i2c
     sda: 
@@ -114,7 +103,7 @@ i2c:
       number: 45
       ignore_strapping_warning: true
 
-#================= Параметры сенсорной панели экрана =================#
+############################ Параметры сенсорной панели экрана ############################
 touchscreen:
   platform: gt911
   transform:
@@ -130,7 +119,7 @@ touchscreen:
             - lvgl.resume:
             - lvgl.widget.redraw:
 
-#========================== Параметры экрана =========================#
+##################################### Параметры экрана ####################################
 display:
   - platform: st7701s
     id: my_display
@@ -181,7 +170,7 @@ display:
         - 7
         - 15
 
-#============= Синхронизация времени через HomeAssistant =============#
+######################## Синхронизация времени через HomeAssistant ########################
 time:
   - platform: sntp
     id: ${device}_esptime
@@ -202,38 +191,38 @@ time:
               else if ((now.hour >= 2 && now.hour <= 5) && now.minute == 35)
                 { id(${device}_antiburn).turn_off(); }
 
-#======== Установка координат для определения положения солнца =======#
+################### Установка координат для определения положения солнца ##################
 sun:
   id: ${device}_sun
   latitude: 55.5856
   longitude: 37.6521
 
-#=============================== Выходы ==============================#
+########################################## Выходы #########################################
 output:
-#-------------------------- Подсветка экрана -------------------------#
+#==================================== Подсветка экрана ===================================#
   - platform: ledc
     pin: 38
     id: ${device}_backlight_ledc
     frequency: 100Hz
-#------------------------------- Реле 1 ------------------------------#
+#========================================= Реле 1 ========================================#
   - id: ${device}_relay_1
     platform: gpio
     pin: 40
-#------------------------------- Реле 2 ------------------------------#
+#========================================= Реле 2 ========================================#
   - id: ${device}_relay_2
     platform: gpio
     pin: 1
-#------------------------------- Реле 3 ------------------------------#
+#========================================= Реле 3 ========================================#
   - id: ${device}_relay_3
     platform: gpio
     pin: 2
 
-#=========================== Переключатели ===========================#
+###################################### Переключатели ######################################
 switch: 
-#------------------- Экран - кнопка света в ванной -------------------#
+#============================= Экран - кнопка света в ванной =============================#
   - platform: lvgl
     id: ${device}_bathroom_light_switch
-    name: "${devicename} Bathroom light"
+    name: "Bathroom light"
     widget: ${lvgl}_bathroom_light_button
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
@@ -248,10 +237,11 @@ switch:
             id(${device}_relay_1).turn_off();
             lv_obj_set_style_text_color(id(${lvgl}_bathroom_light_icon), lv_color_hex(0xB6B6B6), LV_PART_MAIN);
             lv_obj_set_style_text_color(id(${lvgl}_bathroom_light_name), lv_color_hex(0xB6B6B6), LV_PART_MAIN);
-#------------------- Экран - кнопка света на кухне -------------------#
+    icon: mdi:shower
+#============================= Экран - кнопка света на кухне =============================#
   - platform: lvgl
     id: ${device}_kitchen_light_switch
-    name: "${devicename} Kitchen light"
+    name: "Kitchen light"
     widget: ${lvgl}_kitchen_light_button
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
@@ -266,10 +256,11 @@ switch:
             id(${device}_relay_2).turn_off();
             lv_obj_set_style_text_color(id(${lvgl}_kitchen_light_icon), lv_color_hex(0xB6B6B6), LV_PART_MAIN);
             lv_obj_set_style_text_color(id(${lvgl}_kitchen_light_name), lv_color_hex(0xB6B6B6), LV_PART_MAIN);
-#------------------- Экран - кнопка света в туалете ------------------#
+    icon: mdi:countertop-outline
+#============================= Экран - кнопка света в туалете ============================#
   - platform: lvgl
     id: ${device}_toilet_light_switch
-    name: "${devicename} Toilet light"
+    name: "Toilet light"
     widget: ${lvgl}_toilet_light_button
     restore_mode: RESTORE_DEFAULT_ON
     on_turn_on:
@@ -284,10 +275,37 @@ switch:
             id(${device}_relay_3).turn_off();
             lv_obj_set_style_text_color(id(${lvgl}_toilet_light_icon), lv_color_hex(0xB6B6B6), LV_PART_MAIN);
             lv_obj_set_style_text_color(id(${lvgl}_toilet_light_name), lv_color_hex(0xB6B6B6), LV_PART_MAIN);
-#----------- Включение режима защиты от выгорания пикселей -----------#
+    icon: mdi:toilet
+#========================== Экран - кнопка освещения столешницы ==========================#
+  - platform: lvgl
+    id: ${device}_table_light_button
+    widget: ${lvgl}_table_light_button
+    name: "Table light"
+    restore_mode: RESTORE_DEFAULT_ON
+    on_turn_on:
+      then:
+        - lambda: |-
+            lv_obj_set_style_text_color(id(${lvgl}_table_light_icon), lv_color_hex(0xFFFF00), LV_PART_MAIN);
+    on_turn_off:
+      then:
+        - lambda: |-
+            lv_obj_set_style_text_color(id(${lvgl}_table_light_icon), lv_color_hex(0xB6B6B6), LV_PART_MAIN);
+    icon: mdi:light-recessed
+#============================== HomeAssistant - Kitchen Hood =============================#
+#---------------------------- Выключатель освещения столешницы ---------------------------#
+  - platform: homeassistant
+    id: ${device}_kitchen_hood_table_light
+    entity_id: switch.kitchen_hood_table_light
+    on_turn_on:
+      then:
+        - switch.turn_on: ${device}_table_light_button
+    on_turn_off:
+      then:
+        - switch.turn_off: ${device}_table_light_button
+#===================== Включение режима защиты от выгорания пикселей =====================#
   - platform: template
     id: ${device}_antiburn
-    name: "${devicename} Screen antiburn"
+    name: "Screen antiburn"
     optimistic: true
     entity_category: "config"
     icon: mdi:television-shimmer
@@ -316,41 +334,24 @@ switch:
                 id: ${device}_backlight_dim
                 value: 30
 
-#=============================== Кнопки ==============================#
+########################################## Кнопки #########################################
 button:
-#----------------------- Удаленный рестарт ESP -----------------------#
+#================================= Удаленный рестарт ESP =================================#
   - <<: !include add_config/restart.config.yaml
 
-  - platform: template
-    id: ${device}_weather_script_start
-    name: "${devicename} Weather script start"
-    on_press: 
-      then:
-        - lambda: |-
-            id(${script}_weather_widget_update).execute();
-
-  - platform: template
-    id: ${device}_light_script_start
-    name: "${devicename} Light script start"
-    on_press: 
-      then:
-        - lambda: |-
-            id(${script}_lightning_update).execute();
-
-#========================== Источники света ==========================#
+##################################### Источники света #####################################
 light:
-#-------------------------- Подсветка экрана -------------------------#
+#==================================== Подсветка экрана ===================================#
   - platform: monochromatic
     output: ${device}_backlight_ledc
     id: ${device}_backlight
-    name: "${devicename} Screen backlight"
+    internal: true
 
-#============================= Селекторы =============================#
+######################################## Селекторы ########################################
 select:
-#------------------ Выбор режима работы вентиляторов -----------------#
+#============================ Выбор режима работы вентиляторов ===========================#
   - platform: template
-    id: ${device}_hood_mode_select
-    name: "${devicename} Hood mode"
+    id: ${device}_hood_speed
     optimistic: true
     options: ["OFF","1","2","3","4","AUTO"]
     initial_option: "OFF"
@@ -392,13 +393,19 @@ select:
             { lv_obj_add_state(id(${lvgl}_hood_control_button), LV_STATE_CHECKED);
               lv_obj_add_state(id(${lvgl}_hood_speed_auto_button), LV_STATE_CHECKED);
               lv_label_set_text(id(${lvgl}_hood_control_icon), "\U000F171D"); }
+      - homeassistant.service:
+          service: select.select_option
+          data:
+            entity_id: select.kitchen_hood_hood_speed
+            option: !lambda 'return id(${device}_hood_speed).state.c_str();'
+    internal: true
 
-#========================= Числовые объекты ==========================#
+#################################### Числовые объекты #####################################
 number:
-#----------------- Ручная регулировка яркости экрана -----------------#
+#=========================== Ручная регулировка яркости экрана ===========================#
   - platform: template
     id: ${device}_backlight_dim
-    name: "${devicename} Backlight"
+    name: "Backlight"
     optimistic: true
     mode: slider
     min_value: 20
@@ -416,20 +423,20 @@ number:
               call.perform(); }
     unit_of_measurement: "%"
 
-#============================== Скрипты ==============================#
+######################################### Скрипты #########################################
 script:
-#----------------- Обновление часов и даты на экране -----------------#
+#=========================== Обновление часов и даты на экране ===========================#
   - id: ${script}_time_update
     then:
       - lambda: |-
           auto now = id(${device}_esptime).now();
           char time_buffer[6];
           snprintf(time_buffer, sizeof(time_buffer), "%02d:%02d", now.hour, now.minute);
-          lv_label_set_text(id(${lvgl}_time), time_buffer);  
+          lv_label_set_text(id(${lvgl}_time), time_buffer);
           char date_buffer[9];
           snprintf(date_buffer, sizeof(date_buffer), "%02d.%02d.%02d", now.day_of_month, now.month, now.year-2000);
           lv_label_set_text(id(${lvgl}_date), date_buffer);
-#----------- Скрытие кнопок управления вытяжкой по таймеру -----------#
+#===================== Скрытие кнопок управления вытяжкой по таймеру =====================#
   - id: ${script}_hood_button_uncheck_timer
     mode: restart
     then:
@@ -444,11 +451,9 @@ script:
           lv_obj_add_flag(id(${lvgl}_hood_speed_3_button), LV_OBJ_FLAG_HIDDEN);
           lv_obj_add_flag(id(${lvgl}_hood_speed_4_button), LV_OBJ_FLAG_HIDDEN);
           lv_obj_add_flag(id(${lvgl}_hood_speed_auto_button), LV_OBJ_FLAG_HIDDEN);
-
-
-#-------------------- Обновление погодного виджета (Исправленная оптимизация) -------------------#
+#============================== Обновление погодного виджета =============================#
   - id: ${script}_weather_widget_update
-    mode: restart
+    mode: queued
     then:
       - lambda: |-
           float elevation = id(${weather}_sun_elevation).state;
@@ -456,34 +461,53 @@ script:
           std::string condition = id(${weather}_condition).state;
           float amount = std::isnan(id(${weather}_precipitation).state) ? 0 : id(${weather}_precipitation).state;
           std::string day_night = elevation >= 0 ? "day" : "night";
+          float T_C = std::isnan(id(${weather}_temperature).state) ? 0.0f : id(${weather}_temperature).state;
+          float RH = std::isnan(id(${weather}_humidity).state) ? 0.0f : id(${weather}_humidity).state;
+          float T_F = (T_C * 9.0f / 5.0f) + 32.0f;
+          float HI_F = -42.379f + 2.04901523f * T_F + 10.14333127f * RH + -0.22475541f * T_F * RH + -0.00683783f * T_F * T_F +
+              -0.05481717f * RH * RH + 0.00122874f * T_F * T_F * RH + 0.00085282f * T_F * RH * RH + -0.00000199f * T_F * T_F * RH * RH;
+          float HI_C = ((HI_F - 32.0f) * 5.0f / 9.0f);
+
+          ESP_LOGE("main", "Heat Index (NOAA): %.1f°C (T=%.1f°C, RH=%.0f%%)", HI_C, T_C, RH);
+
           auto get_icon_by_cover = [&](const lv_img_dsc_t* light, const lv_img_dsc_t* heavy)
             { return (cover < 66) ? light : heavy; };
+
           const lv_img_dsc_t* main_icon;
-          if (condition == "clear") 
-            { main_icon = (day_night == "day") ? id(${image}_main_sun)->get_lv_img_dsc() : id(${image}_main_moon)->get_lv_img_dsc(); } 
-          else 
+          if (condition == "sunny" || condition == "clear-night")
+            { if (day_night == "day")
+              { if (HI_C > 27.0)
+                  { main_icon = id(${image}_main_sun_hot)->get_lv_img_dsc(); }
+                else
+                  { main_icon = id(${image}_main_sun)->get_lv_img_dsc(); } }
+              else if (day_night == "night")
+                  { main_icon = id(${image}_main_moon)->get_lv_img_dsc(); } }
+          else
             { if (cover < 33) main_icon = id(${image}_main_cloudy_1)->get_lv_img_dsc();
               else if (cover < 66) main_icon = id(${image}_main_cloudy_2)->get_lv_img_dsc();
               else main_icon = id(${image}_main_cloudy_3)->get_lv_img_dsc(); }
+
           const lv_img_dsc_t* moon_sun_icon = id(${image}_empty_55)->get_lv_img_dsc();
           const lv_img_dsc_t* condition_icon = id(${image}_empty_51x66)->get_lv_img_dsc();
           const lv_img_dsc_t* fog_hail_icon = id(${image}_empty_92x30)->get_lv_img_dsc();
-          if (condition == "partlycloudy") 
+
+          if (condition == "partlycloudy")
             { auto day_icon = get_icon_by_cover(id(${image}_cloudy_icon_sun_12)->get_lv_img_dsc(), id(${image}_cloudy_icon_sun_3)->get_lv_img_dsc());
               auto night_icon = get_icon_by_cover(id(${image}_cloudy_icon_moon_12)->get_lv_img_dsc(), id(${image}_cloudy_icon_moon_3)->get_lv_img_dsc());
               moon_sun_icon = (day_night == "day") ? day_icon : night_icon; }
-          else if (condition == "fog") 
+          else if (condition == "fog")
             { fog_hail_icon = id(${image}_icon_fog)->get_lv_img_dsc(); }
           else if (condition == "hail") 
             { condition_icon = get_icon_by_cover(id(${image}_icon_hail_12)->get_lv_img_dsc(), id(${image}_icon_hail_3)->get_lv_img_dsc()); }
           else if (amount > 0)
-            { if (condition == "rainy")
-              { if (amount > 1.6) 
+            { if (condition == "rainy" || condition == "pouring")
+              { if (amount > 1.6)
                   { condition_icon = get_icon_by_cover(id(${image}_icon_rain_heavy_12)->get_lv_img_dsc(), id(${image}_icon_rain_heavy_3)->get_lv_img_dsc()); }
                 else if (amount >= 0.5)
                   { condition_icon = get_icon_by_cover(id(${image}_icon_rain_12)->get_lv_img_dsc(), id(${image}_icon_rain_3)->get_lv_img_dsc()); }
                 else 
                   { condition_icon = get_icon_by_cover(id(${image}_icon_drizzle_12)->get_lv_img_dsc(), id(${image}_icon_drizzle_3)->get_lv_img_dsc()); } }
+          
             else if (condition == "snowy") 
               { if (amount > 1.6)
                   { condition_icon = get_icon_by_cover(id(${image}_icon_snow_heavy_12)->get_lv_img_dsc(), id(${image}_icon_snow_heavy_3)->get_lv_img_dsc()); }
@@ -493,13 +517,23 @@ script:
                   { condition_icon = get_icon_by_cover(id(${image}_icon_snow_low_12)->get_lv_img_dsc(), id(${image}_icon_snow_low_3)->get_lv_img_dsc()); } }
             else if (condition == "snowy-rainy") 
               { condition_icon = get_icon_by_cover(id(${image}_icon_sleet_12)->get_lv_img_dsc(), id(${image}_icon_sleet_3)->get_lv_img_dsc()); } }
+
           lv_img_set_src(id(${lvgl}_main_cloudy_icon), main_icon);
           lv_img_set_src(id(${lvgl}_moon_sun_icon), moon_sun_icon);
           lv_img_set_src(id(${lvgl}_weather_condition_icon), condition_icon);
           lv_img_set_src(id(${lvgl}_fog_hail_icon), fog_hail_icon);
+          
           ESP_LOGI("weather_widget", "Update complete. Condition: %s, Cover: %d%%", condition.c_str(), cover);
-
-#------------------------- Обновление молнии -------------------------#
+#==================== Обновление погодного виджета после загрузки ESP ====================#
+  - id: ${script}_weather_widget_update_load
+    mode: single
+    then:
+      - delay: 60s
+      - lambda: |-
+          id(${script}_weather_widget_update).execute();
+          ESP_LOGI("weather_widget", "Start update complete");
+      - lvgl.widget.redraw:
+#=================================== Обновление молнии ===================================#
   - id: ${script}_lightning_update
     mode: restart
     then:
@@ -507,17 +541,15 @@ script:
           lv_obj_clear_flag(id(${lvgl}_thunder_icon), LV_OBJ_FLAG_HIDDEN);
       - delay: 1s
       - lambda: |-
-          lv_obj_add_flag(id(${lvgl}_thunder_icon), LV_OBJ_FLAG_HIDDEN);
+          lv_obj_add_flag(id(${lvgl}_thunder_icon), LV_OBJ_FLAG_HIDDEN);         
 
-#============================== Сенсоры ==============================#
+######################################### Сенсоры #########################################
 sensor:
-#----------------------- Мощность сигнала WiFi -----------------------#
+#================================= Мощность сигнала WiFi =================================#
   - <<: !include add_config/wifi_strength.config.yaml
-#--------------------- Конвертация времени работы --------------------#
+#=============================== Конвертация времени работы ==============================#
   - <<: !include add_config/uptime_convert.config.yaml
-#-------------- Счетчик количества прошивок устройства ---------------#
-  - <<: !include add_config/flash_counter.config.yaml
-#-------------------- Высота солнца над горизонтом -------------------#
+#============================== Высота солнца над горизонтом =============================#
   - platform: sun
     id: ${weather}_sun_elevation
     type: elevation
@@ -525,7 +557,7 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            if (x <= -3) 
+            if (x <= -3)
               { lv_obj_clear_flag(id(${lvgl}_weather_uv_moon_sun_icon), LV_OBJ_FLAG_HIDDEN);
                 lv_obj_add_flag(id(${lvgl}_weather_uv_icon_state), LV_OBJ_FLAG_HIDDEN);
                 const std::string phase = id(${weather}_moon_phase).state;
@@ -538,19 +570,19 @@ sensor:
                       { "waxing_gibbous", id(${image}_moon_4) }, { "full_moon", id(${image}_moon_5) }, { "waning_gibbous", id(${image}_moon_6) },
                       { "last_quarter", id(${image}_moon_7) }, { "waning_crescent", id(${image}_moon_8) } };
                     esphome::image::Image* icon = id(${image}_ha_sensor_na_40);
-                    for (const auto &item : moon_icons) 
-                      { if (phase == item.name) 
+                    for (const auto &item : moon_icons)
+                      { if (phase == item.name)
                         { icon = item.img_src;
                           break; } }
                     lv_img_set_src(id(${lvgl}_weather_uv_moon_sun_icon), icon); } }
-            else if (x >= 3) 
+            else if (x >= 3)
               { float uv_float = id(${weather}_uv_index).state;
-                if (isnan(uv_float)) 
+                if (isnan(uv_float))
                   { lv_obj_clear_flag(id(${lvgl}_weather_uv_moon_sun_icon), LV_OBJ_FLAG_HIDDEN);
                     ESP_LOGI("sun_elevation", "День. Высота: %.1f, UV: %.1f", x, uv_float); // УДАЛИТЬ ПОТОМ !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
                     lv_img_set_src(id(${lvgl}_weather_uv_moon_sun_icon), id(${image}_ha_sensor_na_40));
                     lv_obj_add_flag(id(${lvgl}_weather_uv_icon_state), LV_OBJ_FLAG_HIDDEN); }
-                else 
+                else
                   { int uv = static_cast<int>(round(uv_float));
                     if (uv >= 1 && uv <= 8) 
                       { lv_obj_clear_flag(id(${lvgl}_weather_uv_moon_sun_icon), LV_OBJ_FLAG_HIDDEN);
@@ -560,8 +592,8 @@ sensor:
                           id(${image}_state_4), id(${image}_state_5), id(${image}_state_6),
                           id(${image}_state_7), id(${image}_state_8) };
                         lv_img_set_src(id(${lvgl}_weather_uv_icon_state), uv_icons_state[uv - 1]);
-                        lv_obj_clear_flag(id(${lvgl}_weather_uv_icon_state), LV_OBJ_FLAG_HIDDEN); } 
-                    else 
+                        lv_obj_clear_flag(id(${lvgl}_weather_uv_icon_state), LV_OBJ_FLAG_HIDDEN); }
+                    else
                       { lv_obj_add_flag(id(${lvgl}_weather_uv_moon_sun_icon), LV_OBJ_FLAG_HIDDEN);
                         lv_obj_add_flag(id(${lvgl}_weather_uv_icon_state), LV_OBJ_FLAG_HIDDEN); } } }
             else if ((x > -3) && (x < 3))
@@ -585,8 +617,8 @@ sensor:
                 call.set_value(brightness_levels[idx]);
                 call.perform(); }
 
-#---------------------- HomeAssistant - ГисМетео ---------------------#
-#............................. Облачность ............................#
+#================================ HomeAssistant - ГисМетео ===============================#
+#--------------------------------------- Облачность --------------------------------------#
   - platform: homeassistant
     entity_id: sensor.gismeteo_cloud_coverage
     id: ${weather}_cloud_cover
@@ -595,7 +627,7 @@ sensor:
       then:
         - lambda: |-
             id(${script}_weather_widget_update).execute();
-#................... Общее количество осадков в мм ...................#
+#-------------------------------- Количество осадков в мм --------------------------------#
   - platform: homeassistant
     entity_id: sensor.gismeteo_precipitation
     id: ${weather}_precipitation
@@ -604,25 +636,7 @@ sensor:
       then:
         - lambda: |-
             id(${script}_weather_widget_update).execute();
-#....................... Количество дождя в мм .......................#
-  - platform: homeassistant
-    entity_id: sensor.gismeteo_rain_amount
-    id: ${weather}_rain_amount
-    force_update: true
-    on_value: 
-      then:
-        - lambda: |-
-            id(${script}_weather_widget_update).execute();
-#....................... Количество снега в мм .......................#
-  - platform: homeassistant
-    entity_id: sensor.gismeteo_snow_amount
-    id: ${weather}_snow_amount
-    force_update: true
-    on_value: 
-      then:
-        - lambda: |-
-            id(${script}_weather_widget_update).execute();
-#............................ Температура ............................#
+#--------------------------------------- Температура -------------------------------------#
   - platform: homeassistant
     entity_id: sensor.gismeteo_temperature
     id: ${weather}_temperature
@@ -634,7 +648,7 @@ sensor:
             char buffer[8];
             if (abs(x) < 1) 
               { lv_label_set_text(id(${lvgl}_temperature_text), " 0°"); }
-            else 
+            else
               { snprintf(buffer, sizeof(buffer), "%.1f°", x);
                 std::string text = x >= 1 ? ("+" + std::string(buffer)) : buffer;
                 lv_label_set_text(id(${lvgl}_temperature_text), text.c_str()); }
@@ -643,14 +657,7 @@ sensor:
               x >= 1   ? id(${image}_temp_high_1) : x > -1   ? id(${image}_temp_zero) : x > -10  ? id(${image}_temp_low_1) :
               x > -20  ? id(${image}_temp_low_2) : x > -30  ? id(${image}_temp_low_3) :
               id(${image}_temp_low_4) );
-#.................... Температура "ощущается как" ....................#
-  - platform: homeassistant
-    entity_id: sensor.gismeteo_apparent_temperature
-    id: ${weather}_apparent_temperature
-    force_update: true
-    filters:
-    - filter_out: NAN
-#............................. Влажность .............................#
+#--------------------------------------- Влажность ---------------------------------------#
   - platform: homeassistant
     entity_id: sensor.gismeteo_humidity
     id: ${weather}_humidity
@@ -661,7 +668,7 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%d%%", (int)x);
             lv_label_set_text(id(${lvgl}_humidity_text), buffer);
-#.............................. Давление .............................#
+#---------------------------------------- Давление ---------------------------------------#
   - platform: homeassistant
     entity_id: sensor.gismeteo_pressure
     id: ${weather}_pressure
@@ -672,7 +679,7 @@ sensor:
             char buffer[5];
             snprintf(buffer, sizeof(buffer), "%d", (int)x);
             lv_label_set_text(id(${lvgl}_pressure_text), buffer);
-#........................... Скорость ветра ..........................#
+#------------------------------------- Скорость ветра ------------------------------------#
   - platform: homeassistant
     entity_id: sensor.gismeteo_wind_speed
     id: ${weather}_wind_speed
@@ -687,11 +694,11 @@ sensor:
                 lv_obj_add_flag(id(${lvgl}_weather_wind_icon_state), LV_OBJ_FLAG_HIDDEN); }
             else
               { esphome::image::Image* wind_icons_state[] = 
-                  { id(${image}_state_1), id(${image}_state_2), id(${image}_state_3), id(${image}_state_4), id(${image}_state_5), 
-                    id(${image}_state_6), id(${image}_state_7), id(${image}_state_8), id(${image}_state_9), id(${image}_state_10), 
+                  { id(${image}_state_1), id(${image}_state_2), id(${image}_state_3), id(${image}_state_4), id(${image}_state_5),
+                    id(${image}_state_6), id(${image}_state_7), id(${image}_state_8), id(${image}_state_9), id(${image}_state_10),
                     id(${image}_state_11), id(${image}_state_12) };
                 int thresholds[] = {1, 3, 5, 7, 10, 13, 17, 20, 24, 28, 33};
-                if (x == 0) 
+                if (x == 0)
                   { lv_obj_add_flag(id(${lvgl}_weather_wind_icon), LV_OBJ_FLAG_HIDDEN);
                     lv_obj_add_flag(id(${lvgl}_weather_wind_icon_state), LV_OBJ_FLAG_HIDDEN); }
                 else if (x > 0) 
@@ -702,15 +709,15 @@ sensor:
                     while (index < 11 && x > thresholds[index]) 
                       { index++; }
                     lv_img_set_src(id(${lvgl}_weather_wind_icon_state), wind_icons_state[index]); } }
-#----------------------- HomeAssistant - OpenUV ----------------------#
-#............................. UV индекс .............................#
+#================================= HomeAssistant - OpenUV ================================#
+#--------------------------------------- UV индекс ---------------------------------------#
   - platform: homeassistant
     entity_id: sensor.openuv_current_uv_index
     id: ${weather}_uv_index
     accuracy_decimals: 0
     force_update: true
-#---------------------- HomeAssistant - AirVisual---------------------#
-#....................... AQI (качество воздуха) ......................#
+#================================ HomeAssistant - AirVisual ==============================#
+#--------------------------------- AQI (качество воздуха) --------------------------------#
   - platform: homeassistant
     entity_id: sensor.u_s_air_quality_index
     id: ${weather}_aqi
@@ -726,11 +733,11 @@ sensor:
                   { id(${image}_leaf_1), id(${image}_leaf_2), id(${image}_leaf_3), id(${image}_leaf_4), id(${image}_leaf_5), id(${image}_leaf_6) };
                 if ((x >= 0) && (x <= 300))
                   { int index = x / 50;
-                    lv_img_set_src(id(${lvgl}_weather_aqi_icon), aqi_icons[index]); } 
-                else if (x > 300) 
+                    lv_img_set_src(id(${lvgl}_weather_aqi_icon), aqi_icons[index]); }
+                else if (x > 300)
                   { lv_img_set_src(id(${lvgl}_weather_aqi_icon), aqi_icons[5]); } }
-#---------------- HomeAssistant - Xras Magnetic Storm ----------------#
-#.......................... Геомагнитный фон .........................#
+#========================== HomeAssistant - Xras Magnetic Storm ==========================#
+#------------------------------------ Геомагнитный фон -----------------------------------#
   - platform: homeassistant
     entity_id: sensor.magnetic_storm_moskva_today
     id: ${weather}_geomagnetic_field
@@ -749,22 +756,22 @@ sensor:
                       { id(${image}_magnet_1), id(${image}_magnet_2), id(${image}_magnet_3), id(${image}_magnet_4), id(${image}_magnet_5),
                         id(${image}_magnet_6), id(${image}_magnet_7), id(${image}_magnet_8) };
                   { lv_img_set_src(id(${lvgl}_weather_magnet_icon), magnet_icons[int(x) - 1]); } }
-                else if (x == 0)
+                else if (x < 1)
                   { lv_obj_add_flag(id(${lvgl}_weather_magnet_icon), LV_OBJ_FLAG_HIDDEN); } }
-#-------------------- HomeAssistant - Blitzortung --------------------#
-#........................... Датчик молнии ...........................#
+#============================== HomeAssistant - Blitzortung ==============================#
+#------------------------------------- Датчик молнии -------------------------------------#
   - platform: homeassistant
     entity_id: sensor.lightning_sensor_lightning_counter
     id: ${weather}_lightning_sensor
     accuracy_decimals: 0
     force_update: true
-    on_value: 
+    on_value:
       then:
         - lambda: |-
             if (id(${weather}_lightning_sensor).state > 0)
               { id(${script}_lightning_update).execute(); }
-#--------------------- HomeAssistant - WC-Control --------------------#
-#................. Температура горячей воды в стояке .................#
+#=============================== HomeAssistant - WC-Control ==============================#
+#--------------------------- Температура горячей воды в стояке ---------------------------#
   - platform: homeassistant
     entity_id: sensor.wc_control_hot_water_tdeg
     id: ${device}_hot_water_temp
@@ -774,7 +781,7 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%.1f°", x);
             lv_label_set_text(id(${lvgl}_hot_water_value), buffer);
-#................. Температура холодной воды в стояке ................#
+#--------------------------- Температура холодной воды в стояке --------------------------#
   - platform: homeassistant
     entity_id: sensor.wc_control_cold_water_tdeg
     id: ${device}_cold_water_temp
@@ -784,8 +791,8 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%.1f°", x);
             lv_label_set_text(id(${lvgl}_cold_water_value), buffer);
-#------------------------ HomeAssistant - SLS ------------------------#
-#........................ Температура в ванне ........................#
+#================================== HomeAssistant - SLS ==================================#
+#.--------------------------------- Температура в ванне ----------------------------------#
   - platform: homeassistant
     entity_id: sensor.temp_humi_vanna_temperature
     id: ${device}_bathroom_temp
@@ -795,7 +802,7 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%.0f°C", x);
             lv_label_set_text(id(${lvgl}_bathroom_temp), buffer);
-#......................... Влажность в ванне .........................#
+#----------------------------------- Влажность в ванне -----------------------------------#
   - platform: homeassistant
     entity_id: sensor.temp_humi_vanna_humidity
     id: ${device}_bathroom_humi
@@ -805,7 +812,7 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%.0f%%", x);
             lv_label_set_text(id(${lvgl}_bathroom_humi), buffer);
-#........................ Температура на кухне .......................#
+#---------------------------------- Температура на кухне ---------------------------------#
   - platform: homeassistant
     entity_id: sensor.temp_humi_prihojaya_temperature # ИЗМЕНИТЬ НА КУХНЮ!
     id: ${device}_kitchen_temp
@@ -815,7 +822,7 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%.0f°C", x);
             lv_label_set_text(id(${lvgl}_kitchen_temp), buffer);
-#......................... Влажность на кухне ........................#
+#----------------------------------- Влажность на кухне ----------------------------------#
   - platform: homeassistant
     entity_id: sensor.temp_humi_prihojaya_humidity # ИЗМЕНИТЬ НА КУХНЮ!
     id: ${device}_kitchen_humi
@@ -826,7 +833,7 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%.0f%%", x);
             lv_label_set_text(id(${lvgl}_kitchen_humi), buffer);
-#....................... Температура в туалете .......................#
+#--------------------------------- Температура в туалете ---------------------------------#
   - platform: homeassistant
     entity_id: sensor.temp_humi_balkon_temperature # ИЗМЕНИТЬ НА ТУАЛЕТ!
     id: ${device}_toilet_temp
@@ -837,7 +844,7 @@ sensor:
             char buffer[6];
             snprintf(buffer, sizeof(buffer), "%.0f°C", x);
             lv_label_set_text(id(${lvgl}_toilet_temp), buffer);
-#......................... Влажность в ванне .........................#
+#----------------------------------- Влажность в ванне -----------------------------------#
   - platform: homeassistant
     entity_id: sensor.temp_humi_balkon_humidity # ИЗМЕНИТЬ  НА ТУАЛЕТ!
     id: ${device}_toilet_humi
@@ -849,34 +856,33 @@ sensor:
             snprintf(buffer, sizeof(buffer), "%.0f%%", x);
             lv_label_set_text(id(${lvgl}_toilet_humi), buffer);
 
-#========================= Текстовые сенсоры =========================#
+#################################### Текстовые сенсоры ####################################
 text_sensor:
-#---------------------------- Время работы ---------------------------#
+#====================================== Время работы =====================================#
   - <<: !include add_config/uptime.config.yaml
-#------------------------- Информация о сети -------------------------#
+#=================================== Информация о сети ===================================#
   - <<: !include add_config/wifi_info.config.yaml
-#------------------------ Причина перезагрузки -----------------------#
+#================================== Причина перезагрузки =================================#
   - <<: !include add_config/reset_reason.config.yaml
-
-#---------------------- HomeAssistant - ГисМетео ---------------------#
-#............................... Погода ..............................#
+#================================ HomeAssistant - ГисМетео ===============================#
+#----------------------------------------- Погода ----------------------------------------#
   - platform: homeassistant
     entity_id: sensor.gismeteo_condition
     id: ${weather}_condition
-    on_value: 
+    on_value:
       then:
         - lambda: |-
             id(${script}_weather_widget_update).execute();
-#........................ Восход/заход солнца ........................#
+#========================== HomeAssistant - восход/заход солнца ==========================#
   - platform: homeassistant
     entity_id: sensor.sun_solar_rising
     id: ${weather}_solar_rising
-#--------------------- HomeAssistant - фаза луны ---------------------#
+#=============================== HomeAssistant - фаза луны ===============================#
   - platform: homeassistant
     entity_id: sensor.moon
     id: ${weather}_moon_phase
-#--------------------- HomeAssistant - WC-Control --------------------#
-#.................... Положение крана горячей воды ...................#
+#=============================== HomeAssistant - WC-Control ==============================#
+#------------------------------ Положение крана горячей воды -----------------------------#
   - platform: homeassistant
     entity_id: binary_sensor.saures_goriachaia_voda
     id: ${device}_hot_valve_state
@@ -891,7 +897,7 @@ text_sensor:
             else
               { lv_label_set_text(${lvgl}_valve_value, "ЗАКРЫТЫ");
                 lv_obj_set_style_text_color(${lvgl}_valve_value, lv_color_hex(0xFF0000), LV_PART_MAIN); }
-#................... Положение крана холодной воды ...................#
+#----------------------------- Положение крана холодной воды -----------------------------#
   - platform: homeassistant
     entity_id: binary_sensor.saures_kholodnaia_voda
     id: ${device}_cold_valve_state
@@ -906,7 +912,7 @@ text_sensor:
             else
               { lv_label_set_text(${lvgl}_valve_value, "ЗАКРЫТЫ");
                 lv_obj_set_style_text_color(${lvgl}_valve_value, lv_color_hex(0xFF0000), LV_PART_MAIN); }
-#........................ Режим работы фильтра .......................#
+#---------------------------------- Режим работы фильтра ---------------------------------#
   - platform: homeassistant
     entity_id: sensor.wc_control_work_mode
     id: ${device}_work_mode_state
@@ -918,7 +924,7 @@ text_sensor:
               { lv_label_set_text(${lvgl}_filter_mode_value, "НЕТ ВОДЫ");
                 lv_obj_set_style_text_color(${lvgl}_filter_mode_value, lv_color_hex(0xFF0000), LV_PART_MAIN); }
             else if (data == "WATER SET")
-              { lv_label_set_text(${lvgl}_filter_mode_value, "НАБОР ВОДЫ В БАК");
+              { lv_label_set_text(${lvgl}_filter_mode_value, "НАБОР ВОДЫ");
                 lv_obj_set_style_text_color(${lvgl}_filter_mode_value, lv_color_hex(0xFFA500), LV_PART_MAIN); }
             else if (data == "FULL TANK")
               { lv_label_set_text(${lvgl}_filter_mode_value, "ПОЛНЫЙ БАК");
@@ -926,7 +932,7 @@ text_sensor:
             else if (data == "FLUSH")
               { lv_label_set_text(${lvgl}_filter_mode_value, "ПРОМЫВКА");
                 lv_obj_set_style_text_color(${lvgl}_filter_mode_value, lv_color_hex(0x0000FF), LV_PART_MAIN); }
-#....................... Количество воды в баке ......................#
+#--------------------------------- Количество воды в баке --------------------------------#
   - platform: homeassistant
     entity_id: sensor.wc_control_tank
     id: ${device}_tank_state
@@ -940,58 +946,93 @@ text_sensor:
             else if (data == "FULL")
               { lv_label_set_text(id(${lvgl}_filter_tank_value), "ПОЛНЫЙ");
                 lv_obj_set_style_text_color(id(${lvgl}_filter_tank_value), lv_color_hex(0x008000), LV_PART_MAIN); }
+#============================== HomeAssistant - Kitchen-Hood =============================#
+#------------------------------------ Скорость вытяжки -----------------------------------#
+  - platform: homeassistant
+    entity_id: select.kitchen_hood_hood_speed
+    id: ${device}_hood_mode
+    on_value:
+      then:
+        - lambda: |-
+            std::string state = (id(${device}_hood_mode).state);
+            auto call = id(${device}_hood_speed).make_call();
+            if (state == "OFF") 
+              { call.set_option("OFF"); }
+            else if (state == "1")
+              { call.set_option("1"); }
+            else if (state == "2")
+              { call.set_option("2"); }
+            else if (state == "3")
+              { call.set_option("3"); }
+            else if (state == "4")
+              { call.set_option("4"); }
+            else if (state == "AUTO")
+              { call.set_option("AUTO"); }
+            call.perform();
 
-#========================== Бинарные сенсоры =========================#
+#================================== HomeAssistant - SLS ==================================#
+#----------------------------------- Выключатель Aqara -----------------------------------#
+  - platform: homeassistant
+    entity_id: sensor.switch_spalnya_action
+    id: ${device}_switch_spalnya
+    on_value:
+      then:
+        - lambda: |-
+            std::string state = (id(${device}_switch_spalnya).state);
+            if (lv_obj_has_state(id(${lvgl}_lock_button), LV_STATE_CHECKED)) {
+              lv_obj_set_style_bg_color(id(${lvgl}_main_page)->obj, lv_color_hex(0xFF0000), 0);
+              lv_timer_create([](lv_timer_t *timer) {
+              lv_obj_set_style_bg_color(id(${lvgl}_main_page)->obj, lv_color_hex(0x000000), 0);
+              lv_timer_del(timer);
+              }, 500, nullptr); }
+            else 
+              { if (state == "button_1_single") {
+                  id(${device}_bathroom_light_switch).toggle(); }
+                else if (state == "button_2_single") {
+                  id(${device}_toilet_light_switch).toggle(); }
+                else if (state == "button_3_single") {
+                  id(${device}_kitchen_light_switch).toggle(); }
+                else if (state == "button_4_single") {
+                  id(${device}_kitchen_light_switch).toggle(); } }
+
+##################################### Бинарные сенсоры ####################################
 binary_sensor:
-#------------------------- Статус подключения ------------------------#
+#=================================== Статус подключения ==================================#
   - <<: !include add_config/status.config.yaml
 
-#=============================== Шрифты ==============================#
+########################################## Шрифты #########################################
 font:
-#--------------------- Текст загрузочного экрана ---------------------#
+#=============================== Текст загрузочного экрана ===============================#
   - file: 'fonts/HaginCapsMedium.ttf'
     id: ${font}_boot_screen
     size: 30
     bpp: 4
     glyphs: ["-@CaBberoyz геилнотх"]
-#----------------------------- Дата/время ----------------------------#
+#======================================= Дата/время ======================================#
   - file: "fonts/DSEG7ModernMini-Bold.ttf"
     id: ${font}_date_time
     size: 36
-#--------------------------- Иконки кнопок ---------------------------#
+#===================================== Иконки кнопок =====================================#
   - file: 'fonts/materialdesignicons.ttf'
     id: ${font}_light_button
     size: 87
     bpp: 4
     glyphs: ["\U000F09A0","\U000F09AB","\U000F181D",]
-#---------------------- Иконки маленьких кнопок ----------------------#
+#================================ Иконки маленьких кнопок ================================#
   - file: 'fonts/materialdesignicons.ttf'
     id: ${font}_small_button_icon
     size: 50
     bpp: 4
     glyphs: 
-      ["\U000F091D",  # освещение столешницы
-       "\U000F081D",  # вылючение вытяжки
-       "\U000F0210",  # иконка вытяжки - выключено
-       "\U000F1472",  # иконка вытяжки - первая скорость
-       "\U000F1473",  # иконка вытяжки - вторая скорость
-       "\U000F1474",  # иконка вытяжки - третья скорость
-       "\U000F146F",  # иконка вытяжки - четвертая скорость
-       "\U000F171D",  # иконка вытяжки - автоматический режим
-       "\U000F03A6",  # первая скорость - выбор
-       "\U000F03A9",  # вторая скорость - выбор
-       "\U000F03AC",  # третья скорость - выбор
-       "\U000F03AE",  # четвертая скорость - выбор
-       "\U000F0BEB",  # автоматический режим - выбор
-       "\U000F0341",  # блокировка снята
-       "\U000F16AB"]  # блокировка
-#---------------------------- Текст кнопок ---------------------------#
+      ["\U000F091D", "\U000F081D", "\U000F0210", "\U000F1472", "\U000F1473", "\U000F1474", "\U000F146F", "\U000F171D",
+       "\U000F03A6", "\U000F03A9", "\U000F03AC", "\U000F03AE", "\U000F0BEB", "\U000F0341", "\U000F16AB"]
+#====================================== Текст кнопок =====================================#
   - file: 'fonts/HaginCapsMedium.ttf'
     id: ${font}_light_button_name
     glyphs: ["-АВЕКЛНТУХЯ"]
     size: 36
     bpp: 4
-#---------------- Иконка и текст температуры/давления ----------------#
+#========================== Иконка и текст температуры/давления ==========================#
   - file: 'fonts/HaginCapsMedium.ttf'
     id: ${font}_temphumi_text
     glyphs: ['-%°C1234567890']
@@ -1000,7 +1041,7 @@ font:
         glyphs: ["\U000F050F",]
     size: 24
     bpp: 4
-#-------------------------- Иконка влажности -------------------------#
+#==================================== Иконка влажности ===================================#
   - file: 'fonts/HaginCapsMedium.ttf'
     id: ${font}_humi_text
     extras:
@@ -1008,570 +1049,549 @@ font:
         glyphs: ["\U000F058E",]
     size: 28
     bpp: 4
-#---------------- Текст температуры/влажности/давления ---------------#
+#========================== Текст температуры/влажности/давления =========================#
   - file: 'fonts/Galgo.ttf'
     id: ${font}_temp_humi_press_text
-    glyphs: ['-+%°1234567890. ']  
+    glyphs: ['-+%°1234567890. ']
     size: 40
     bpp: 8
-#----------------------- Текст карточки данных -----------------------#
+#================================= Текст карточки данных =================================#
   - file: 'fonts/ofont.ru_a_Empirial.ttf'
     id: ${font}_date_label
-    glyphs: ["-°:.0123456789АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧЩЬЫЪЭЮЯ абвгдежзийклмнопрстуфхцчщьыъэюя"] 
+    glyphs: ["-°:.0123456789АБВГДЕЖЗИЙКЛМНОПРСТУФХЦЧЩЬЫЪЭЮЯ абвгдежзийклмнопрстуфхцчщьыъэюя"]
     size: 38
     bpp: 8
 
-#================ Экран / настройка иконок/изображений ===============#  
+########################### Экран / настройка иконок/изображений ##########################
 image:
-#-------------------- 376x182px - загрузочное лого -------------------#
+#============================== 376x182px - загрузочное лого =============================#
   - file: "images/main_bober.png"
     id: ${image}_boot_screen
     type: RGB565
     transparency: alpha_channel
-#---------------------- 19px - сенсор недоступен ---------------------#
-  - file: "images/weather_png/not-available-delete-19.png"
+#================================ 19px - сенсор недоступен ===============================#
+  - file: "images/touchscreen_480x480/not-available-19.png"
     id: ${image}_ha_sensor_na_19
     type: RGB565
     transparency: alpha_channel
-#---------------------- 40px - сенсор недоступен ---------------------#
-  - file: "images/weather_png/not-available-delete-40.png"
+#================================ 40px - сенсор недоступен ===============================#
+  - file: "images/touchscreen_480x480/not-available-40.png"
     id: ${image}_ha_sensor_na_40
     type: RGB565
     transparency: alpha_channel
-#---------------------- 55px - сенсор недоступен ---------------------#
-  - file: "images/weather_png/not-available-delete-55.png"
+#================================ 55px - сенсор недоступен ===============================#
+  - file: "images/touchscreen_480x480/not-available-55.png"
     id: ${image}_ha_sensor_na_55
     resize: 55x55
     type: RGB565
     transparency: alpha_channel
-#-------------------- 51*66px - сенсор недоступен --------------------#
-  - file: "images/weather_png/not-available-delete-51x66.png"
+#============================== 51*66px - сенсор недоступен ==============================#
+  - file: "images/touchscreen_480x480/not-available-51x66.png"
     id: ${image}_ha_sensor_na_51x66
     type: RGB565
     transparency: alpha_channel
-#-------------------- 92*30px - сенсор недоступен --------------------#
-  - file: "images/weather_png/not-available-delete-92x30.png"
+#============================== 92*30px - сенсор недоступен ==============================#
+  - file: "images/touchscreen_480x480/not-available-92x30.png"
     id: ${image}_ha_sensor_na_92x30
     type: RGB565
-    transparency: alpha_channel 
-#--------------------- 130px - сенсор недоступен ---------------------#
-  - file: "images/weather_png/not-available-delete-130.png"
+    transparency: alpha_channel
+#=============================== 130px - сенсор недоступен ===============================#
+  - file: "images/touchscreen_480x480/not-available-130.png"
     id: ${image}_ha_sensor_na_130
     type: RGB565
     transparency: alpha_channel
-#------------------ 19px - пустое изображение при 0 ------------------#
-  - file: "images/weather_png/empty-19.png"
+#============================ 19px - пустое изображение при 0 ============================#
+  - file: "images/touchscreen_480x480/empty-19.png"
     id: ${image}_empty_19
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - пустое изображение при 0 ------------------#
-  - file: "images/weather_png/empty-40.png"
+#============================ 40px - пустое изображение при 0 ============================#
+  - file: "images/touchscreen_480x480/empty-40.png"
     id: ${image}_empty_40
     type: RGB565
     transparency: alpha_channel
-#------------------ 55px - пустое изображение при 0 ------------------#
-  - file: "images/weather_png/empty-55.png"
+#============================ 55px - пустое изображение при 0 ============================#
+  - file: "images/touchscreen_480x480/empty-55.png"
     id: ${image}_empty_55
     type: RGB565
     transparency: alpha_channel
-#----------------- 51*66px - пустое изображение при 0 ----------------#
-  - file: "images/weather_png/empty-51x66.png"
+#=========================== 51*66px - пустое изображение при 0 ==========================#
+  - file: "images/touchscreen_480x480/empty-51x66.png"
     id: ${image}_empty_51x66
     type: RGB565
     transparency: alpha_channel
-#----------------- 92*30px - пустое изображение при 0 ----------------#
-  - file: "images/weather_png/empty-92x30.png"
+#=========================== 92*30px - пустое изображение при 0 ==========================#
+  - file: "images/touchscreen_480x480/empty-92x30.png"
     id: ${image}_empty_92x30
     type: RGB565
     transparency: alpha_channel
-#------------------ 130px - пустое изображение при 0 -----------------#
-  - file: "images/weather_png/empty-130.png"
+#============================ 130px - пустое изображение при 0 ===========================#
+  - file: "images/touchscreen_480x480/empty-130.png"
     id: ${image}_empty_130
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 1 -----------------------#
-  - file: "images/weather_png/19_pix/state-1.png"
+#================================== 19px - индикатор - 1 =================================#
+  - file: "images/touchscreen_480x480/state-1.png"
     id: ${image}_state_1
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 2 -----------------------#
-  - file: "images/weather_png/19_pix/state-2.png"
+#================================== 19px - индикатор - 2 =================================#
+  - file: "images/touchscreen_480x480/state-2.png"
     id: ${image}_state_2
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 3 -----------------------#
-  - file: "images/weather_png/19_pix/state-3.png"
+#================================== 19px - индикатор - 3 =================================#
+  - file: "images/touchscreen_480x480/state-3.png"
     id: ${image}_state_3
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 4 -----------------------#
-  - file: "images/weather_png/19_pix/state-4.png"
+#================================== 19px - индикатор - 4 =================================#
+  - file: "images/touchscreen_480x480/state-4.png"
     id: ${image}_state_4
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 5 -----------------------#
-  - file: "images/weather_png/19_pix/state-5.png"
+#================================== 19px - индикатор - 5 =================================#
+  - file: "images/touchscreen_480x480/state-5.png"
     id: ${image}_state_5
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 6 -----------------------#
-  - file: "images/weather_png/19_pix/state-6.png"
+#================================== 19px - индикатор - 6 =================================#
+  - file: "images/touchscreen_480x480/state-6.png"
     id: ${image}_state_6
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 7 -----------------------#
-  - file: "images/weather_png/19_pix/state-7.png"
+#================================== 19px - индикатор - 7 =================================#
+  - file: "images/touchscreen_480x480/state-7.png"
     id: ${image}_state_7
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 8 -----------------------#
-  - file: "images/weather_png/19_pix/state-8.png"
+#================================== 19px - индикатор - 8 =================================#
+  - file: "images/touchscreen_480x480/state-8.png"
     id: ${image}_state_8
     type: RGB565
     transparency: alpha_channel
-#------------------------ 19px - индикатор - 9 -----------------------#
-  - file: "images/weather_png/19_pix/state-9.png"
+#================================== 19px - индикатор - 9 =================================#
+  - file: "images/touchscreen_480x480/state-9.png"
     id: ${image}_state_9
     type: RGB565
     transparency: alpha_channel
-#----------------------- 19px - индикатор - 10 -----------------------#
-  - file: "images/weather_png/19_pix/state-10.png"
+#================================= 19px - индикатор - 10 =================================#
+  - file: "images/touchscreen_480x480/state-10.png"
     id: ${image}_state_10
     type: RGB565
     transparency: alpha_channel
-#----------------------- 19px - индикатор - 11 -----------------------#
-  - file: "images/weather_png/19_pix/state-11.png"
+#================================= 19px - индикатор - 11 =================================#
+  - file: "images/touchscreen_480x480/state-11.png"
     id: ${image}_state_11
     type: RGB565
     transparency: alpha_channel
-#----------------------- 19px - индикатор - 12 -----------------------#
-  - file: "images/weather_png/19_pix/state-12.png"
+#================================= 19px - индикатор - 12 =================================#
+  - file: "images/touchscreen_480x480/state-12.png"
     id: ${image}_state_12
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - новая луна -------------------------#
-  - file: "images/weather_png/40_pix/moon-1.png"
+#=================================== 40px - новая луна ===================================#
+  - file: "images/touchscreen_480x480/moon-1.png"
     id: ${image}_moon_1
     type: RGB565
     transparency: alpha_channel
-#------------------------ 40px - молодая луна ------------------------#
-  - file: "images/weather_png/40_pix/moon-2.png"
+#================================== 40px - молодая луна ==================================#
+  - file: "images/touchscreen_480x480/moon-2.png"
     id: ${image}_moon_2
     type: RGB565
     transparency: alpha_channel
-#-------------------- 40px - первая четверть луны --------------------#
-  - file: "images/weather_png/40_pix/moon-3.png"
+#============================== 40px - первая четверть луны ==============================#
+  - file: "images/touchscreen_480x480/moon-3.png"
     id: ${image}_moon_3
     type: RGB565
     transparency: alpha_channel
-#------------------------ 40px - растущая луна -----------------------#
-  - file: "images/weather_png/40_pix/moon-4.png"
+#================================== 40px - растущая луна =================================#
+  - file: "images/touchscreen_480x480/moon-4.png"
     id: ${image}_moon_4
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - полная луна ------------------------#
-  - file: "images/weather_png/40_pix/moon-5.png"
+#=================================== 40px - полная луна ==================================#
+  - file: "images/touchscreen_480x480/moon-5.png"
     id: ${image}_moon_5
     type: RGB565
     transparency: alpha_channel
-#----------------------- 40px - убывающая луна -----------------------#
-  - file: "images/weather_png/40_pix/moon-6.png"
+#================================= 40px - убывающая луна =================================#
+  - file: "images/touchscreen_480x480/moon-6.png"
     id: ${image}_moon_6
     type: RGB565
     transparency: alpha_channel
-#------------------- 40px - последняя четверть луны ------------------#
-  - file: "images/weather_png/40_pix/moon-7.png"
+#============================= 40px - последняя четверть луны ============================#
+  - file: "images/touchscreen_480x480/moon-7.png"
     id: ${image}_moon_7
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - старая луна ------------------------#
-  - file: "images/weather_png/40_pix/moon-8.png"
+#=================================== 40px - старая луна ==================================#
+  - file: "images/touchscreen_480x480/moon-8.png"
     id: ${image}_moon_8
     type: RGB565
     transparency: alpha_channel
-#------------------- 40px - геомагнитный фон 1 балл ------------------#
-  - file: "images/weather_png/40_pix/magnet-1.png"
+#============================= 40px - геомагнитный фон 1 балл ============================#
+  - file: "images/touchscreen_480x480/magnet-1.png"
     id: ${image}_magnet_1
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - геомагнитный фон 2 балла ------------------#
-  - file: "images/weather_png/40_pix/magnet-2.png"
+#============================ 40px - геомагнитный фон 2 балла ============================#
+  - file: "images/touchscreen_480x480/magnet-2.png"
     id: ${image}_magnet_2
     resize: 120x120
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - геомагнитный фон 3 балла ------------------#
-  - file: "images/weather_png/40_pix/magnet-3.png"
+#============================ 40px - геомагнитный фон 3 балла ============================#
+  - file: "images/touchscreen_480x480/magnet-3.png"
     id: ${image}_magnet_3
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - геомагнитный фон 4 балла ------------------#
-  - file: "images/weather_png/40_pix/magnet-4.png"
+#============================ 40px - геомагнитный фон 4 балла ============================#
+  - file: "images/touchscreen_480x480/magnet-4.png"
     id: ${image}_magnet_4
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - геомагнитный фон 5 баллов -----------------#
-  - file: "images/weather_png/40_pix/magnet-5.png"
+#============================ 40px - геомагнитный фон 5 баллов ===========================#
+  - file: "images/touchscreen_480x480/magnet-5.png"
     id: ${image}_magnet_5
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - геомагнитный фон 6 баллов -----------------#
-  - file: "images/weather_png/40_pix/magnet-6.png"
+#============================ 40px - геомагнитный фон 6 баллов ===========================#
+  - file: "images/touchscreen_480x480/magnet-6.png"
     id: ${image}_magnet_6
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - геомагнитный фон 7 баллов -----------------#
-  - file: "images/weather_png/40_pix/magnet-7.png"
+#============================ 40px - геомагнитный фон 7 баллов ===========================#
+  - file: "images/touchscreen_480x480/magnet-7.png"
     id: ${image}_magnet_7
     type: RGB565
     transparency: alpha_channel
-#------------------ 40px - геомагнитный фон 8 баллов -----------------#
-  - file: "images/weather_png/40_pix/magnet-8.png"
+#============================ 40px - геомагнитный фон 8 баллов ===========================#
+  - file: "images/touchscreen_480x480/magnet-8.png"
     id: ${image}_magnet_8
     type: RGB565
     transparency: alpha_channel
-#-------------------------- 40px - AQI 0-50 --------------------------#
-  - file: "images/weather_png/40_pix/leaf-1.png"
+#==================================== 40px - AQI 0-50 ====================================#
+  - file: "images/touchscreen_480x480/leaf-1.png"
     id: ${image}_leaf_1
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - AQI 50-100 -------------------------#
-  - file: "images/weather_png/40_pix/leaf-2.png"
+#=================================== 40px - AQI 50-100 ===================================#
+  - file: "images/touchscreen_480x480/leaf-2.png"
     id: ${image}_leaf_2
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - AQI 100-150 ------------------------#
-  - file: "images/weather_png/40_pix/leaf-3.png"
+#=================================== 40px - AQI 100-150 ==================================#
+  - file: "images/touchscreen_480x480/leaf-3.png"
     id: ${image}_leaf_3
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - AQI 150-200 ------------------------#
-  - file: "images/weather_png/40_pix/leaf-4.png"
+#=================================== 40px - AQI 150-200 ==================================#
+  - file: "images/touchscreen_480x480/leaf-4.png"
     id: ${image}_leaf_4
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - AQI 200-300 ------------------------#
-  - file: "images/weather_png/40_pix/leaf-5.png"
+#=================================== 40px - AQI 200-300 ==================================#
+  - file: "images/touchscreen_480x480/leaf-5.png"
     id: ${image}_leaf_5
     type: RGB565
     transparency: alpha_channel
-#------------------------ 40px - AQI более 300 -----------------------#
-  - file: "images/weather_png/40_pix/leaf-6.png"
+#================================== 40px - AQI более 300 =================================#
+  - file: "images/touchscreen_480x480/leaf-6.png"
     id: ${image}_leaf_6
     type: RGB565
     transparency: alpha_channel
-#----------------------- 40px - скорость ветра -----------------------#
-  - file: "images/weather_png/40_pix/wind.png"
+#================================= 40px - скорость ветра =================================#
+  - file: "images/touchscreen_480x480/wind.png"
     id: ${image}_wind
     type: RGB565
     transparency: alpha_channel
-#-------------------------- 40px - UV индекс -------------------------#
-  - file: "images/weather_png/40_pix/uv-index.png"
+#==================================== 40px - UV индекс ===================================#
+  - file: "images/touchscreen_480x480/uv-index.png"
     id: ${image}_uv_index
     type: RGB565
     transparency: alpha_channel
-#-------------------------- 130px - Облачно --------------------------#
-  - file: "images/weather_png/130_pix/0-0-cloudy-1.png"
+#==================================== 130px - Облачно ====================================#
+  - file: "images/touchscreen_480x480/0-0-cloudy-1.png"
     id: ${image}_main_cloudy_1
     type: RGB565
     transparency: alpha_channel
-#------------------- 130px - Переменная облачность -------------------#
-  - file: "images/weather_png/130_pix/0-0-cloudy-2.png"
+#============================= 130px - Переменная облачность =============================#
+  - file: "images/touchscreen_480x480/0-0-cloudy-2.png"
     id: ${image}_main_cloudy_2
     type: RGB565
     transparency: alpha_channel
-#-------------------------- 130px - Пасмурно -------------------------#
-  - file: "images/weather_png/130_pix/0-0-cloudy-3.png"
+#==================================== 130px - Пасмурно ===================================#
+  - file: "images/touchscreen_480x480/0-0-cloudy-3.png"
     id: ${image}_main_cloudy_3
     type: RGB565
     transparency: alpha_channel
-#--------- 55px - Иконка солнца/облачно+переменная облачность --------#
-  - file: "images/weather_png/130_pix/0-12-cloudy-sun.png"
+#=================== 55px - Иконка солнца/облачно+переменная облачность ==================#
+  - file: "images/touchscreen_480x480/0-12-cloudy-sun.png"
     id: ${image}_cloudy_icon_sun_12
     type: RGB565
     transparency: alpha_channel
-#------------------- 55px - Иконка солнца/пасмурно -------------------#
-  - file: "images/weather_png/130_pix/0-3-cloudy-sun.png"
+#============================= 55px - Иконка солнца/пасмурно =============================#
+  - file: "images/touchscreen_480x480/0-3-cloudy-sun.png"
     id: ${image}_cloudy_icon_sun_3
     type: RGB565
     transparency: alpha_channel
-#---------- 55px - Иконка луны/облачно+переменная облачность ---------#
-  - file: "images/weather_png/130_pix/0-12-cloudy-moon.png"
+#==================== 55px - Иконка луны/облачно+переменная облачность ===================#
+  - file: "images/touchscreen_480x480/0-12-cloudy-moon.png"
     id: ${image}_cloudy_icon_moon_12
     type: RGB565
     transparency: alpha_channel
-#-------------------- 55px - Иконка луны/пасмурно --------------------#
-  - file: "images/weather_png/130_pix/0-3-cloudy-moon.png"
+#============================== 55px - Иконка луны/пасмурно ==============================#
+  - file: "images/touchscreen_480x480/0-3-cloudy-moon.png"
     id: ${image}_cloudy_icon_moon_3
     type: RGB565
     transparency: alpha_channel
-#------------------------ 40px - восход солнца -----------------------#
-  - file: "images/weather_png/40_pix/sun-rise.png"
+#================================== 40px - восход солнца =================================#
+  - file: "images/touchscreen_480x480/sun-rise.png"
     id: ${image}_sun_rise
     type: RGB565
     transparency: alpha_channel
-#------------------------ 40px - закат солнца ------------------------#
-  - file: "images/weather_png/40_pix/sun-set.png"
+#================================== 40px - закат солнца ==================================#
+  - file: "images/touchscreen_480x480/sun-set.png"
     id: ${image}_sun_set
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - восход луны ------------------------#
-  - file: "images/weather_png/40_pix/moon-rise.png"
+#=================================== 40px - восход луны ==================================#
+  - file: "images/touchscreen_480x480/moon-rise.png"
     id: ${image}_moon_rise
     type: RGB565
     transparency: alpha_channel
-#------------------------- 40px - закат луны -------------------------#
-  - file: "images/weather_png/40_pix/moon-set.png"
+#=================================== 40px - закат луны ===================================#
+  - file: "images/touchscreen_480x480/moon-set.png"
     id: ${image}_moon_set
     type: RGB565
     transparency: alpha_channel
-#------------------------- 130px - День/ясно -------------------------#
-  - file: "images/weather_png/130_pix/1-sun.png"
+#=================================== 130px - День/ясно ===================================#
+  - file: "images/touchscreen_480x480/1-sun.png"
     id: ${image}_main_sun
     type: RGB565
     transparency: alpha_channel
-#------------------ 130px - День/высокая температура -----------------#
-  - file: "images/weather_png/130_pix/1-sun-hot.png"
+#============================ 130px - День/высокая температура ===========================#
+  - file: "images/touchscreen_480x480/1-sun-hot.png"
     id: ${image}_main_sun_hot
     type: RGB565
     transparency: alpha_channel
-#------------------------ 130px - День/пыльно ------------------------#
-  - file: "images/weather_png/130_pix/1-sun-dust.png"
+#================================== 130px - День/пыльно ==================================#
+  - file: "images/touchscreen_480x480/1-sun-dust.png"
     id: ${image}_main_sun_dust
     type: RGB565
     transparency: alpha_channel
-#---------------------- 130px - День/дымка+туман ---------------------#
-  - file: "images/weather_png/130_pix/1-sun-fog-haze.png"
+#================================ 130px - День/дымка+туман ===============================#
+  - file: "images/touchscreen_480x480/1-sun-fog-haze.png"
     id: ${image}_main_sun_fog_haze
     type: RGB565
     transparency: alpha_channel
-#------------------------- 130px - Ночь/ясно -------------------------#
-  - file: "images/weather_png/130_pix/1-moon.png"
+#=================================== 130px - Ночь/ясно ===================================#
+  - file: "images/touchscreen_480x480/1-moon.png"
     id: ${image}_main_moon
     type: RGB565
     transparency: alpha_channel
-#----------------------- 130px - Звездная ночь -----------------------#
-  - file: "images/weather_png/130_pix/1-moon-star.png"
+#================================= 130px - Звездная ночь =================================#
+  - file: "images/touchscreen_480x480/1-moon-star.png"
     id: ${image}_main_moon_star
     type: RGB565
     transparency: alpha_channel
-#---------------------- 130px - Ночь/дымка+туман ---------------------#
-  - file: "images/weather_png/130_pix/1-moon-fog-haze.png"
+#================================ 130px - Ночь/дымка+туман ===============================#
+  - file: "images/touchscreen_480x480/1-moon-fog-haze.png"
     id: ${image}_main_moon_fog_haze
     type: RGB565
     transparency: alpha_channel
-#------------------------ 130px - радуга/ясно ------------------------#
-  - file: "images/weather_png/130_pix/4-rainbow-clear.png"
+#================================== 130px - радуга/ясно ==================================#
+  - file: "images/touchscreen_480x480/4-rainbow-clear.png"
     id: ${image}_main_rainbow_clear
     type: RGB565
     transparency: alpha_channel
-#---------------- 130px - радуга/переменная облачность ---------------#
-  - file: "images/weather_png/130_pix/4-rainbow.png"
+#========================== 130px - радуга/переменная облачность =========================#
+  - file: "images/touchscreen_480x480/4-rainbow.png"
     id: ${image}_main_rainbow_cloudy
     type: RGB565
     transparency: alpha_channel
-#--------------------- 130px - солнечное затмение --------------------#
-  - file: "images/weather_png/130_pix/4-solar-eclipse.png"
+#=============================== 130px - солнечное затмение ==============================#
+  - file: "images/touchscreen_480x480/4-solar-eclipse.png"
     id: ${image}_main_solar_eclipse
     type: RGB565
     transparency: alpha_channel
-#------- 51*66px - Иконка морось/облачно+переменная облачность -------#
-  - file: "images/weather_png/130_pix/2-12-drizzle.png"
+#================= 51*66px - Иконка морось/облачно+переменная облачность =================#
+  - file: "images/touchscreen_480x480/2-12-drizzle.png"
     id: ${image}_icon_drizzle_12
     type: RGB565
     transparency: alpha_channel
-#---------------------- 51*66px - Иконка молнии ----------------------#
-  - file: "images/weather_png/130_pix/4-thunder.png"
+#================================ 51*66px - Иконка молнии ================================#
+  - file: "images/touchscreen_480x480/4-thunder.png"
     id: ${image}_icon_thunder
     type: RGB565
     transparency: alpha_channel
-#------------------ 51*66px - Иконка морось/пасмурно -----------------#
-  - file: "images/weather_png/130_pix/2-3-drizzle.png"
+#============================ 51*66px - Иконка морось/пасмурно ===========================#
+  - file: "images/touchscreen_480x480/2-3-drizzle.png"
     id: ${image}_icon_drizzle_3
     type: RGB565
     transparency: alpha_channel
-#-------- 51*66px - Иконка дождь/облачно+переменная облачность -------#
-  - file: "images/weather_png/130_pix/2-12-rain.png"
+#================== 51*66px - Иконка дождь/облачно+переменная облачность =================#
+  - file: "images/touchscreen_480x480/2-12-rain.png"
     id: ${image}_icon_rain_12
     type: RGB565
     transparency: alpha_channel
-#------------------ 51*66px - Иконка дождь/пасмурно ------------------#
-  - file: "images/weather_png/130_pix/2-3-rain.png"
+#============================ 51*66px - Иконка дождь/пасмурно ============================#
+  - file: "images/touchscreen_480x480/2-3-rain.png"
     id: ${image}_icon_rain_3
     type: RGB565
     transparency: alpha_channel
-#------- 51*66px - Иконка ливень/облачно+переменная облачность -------#
-  - file: "images/weather_png/130_pix/2-12-rain-heavy.png"
+#================= 51*66px - Иконка ливень/облачно+переменная облачность =================#
+  - file: "images/touchscreen_480x480/2-12-rain-heavy.png"
     id: ${image}_icon_rain_heavy_12
     type: RGB565
     transparency: alpha_channel
-#----------------- 51*66px - Иконка ливень/пасмурно ------------------#
-  - file: "images/weather_png/130_pix/2-3-rain-heavy.png"
+#=========================== 51*66px - Иконка ливень/пасмурно ============================#
+  - file: "images/touchscreen_480x480/2-3-rain-heavy.png"
     id: ${image}_icon_rain_heavy_3
     type: RGB565
     transparency: alpha_channel
-
-#--- 51*66px - Иконка морось с грозой/облачно+переменная облачность --#
-  - file: "images/weather_png/130_pix/2-12-drizzle-light.png"
-    id: ${image}_icon_drizzle_light_12
-    type: RGB565
-    transparency: alpha_channel
-#------------- 51*66px - Иконка морось с грозой/пасмурно -------------#
-  - file: "images/weather_png/130_pix/2-3-drizzle-light.png"
-    id: ${image}_icon_drizzle_light_3
-    type: RGB565
-    transparency: alpha_channel
-#-------- 51*66px - Иконка град/облачно+переменная облачность --------#
-  - file: "images/weather_png/130_pix/2-12-hail.png"
+#================== 51*66px - Иконка град/облачно+переменная облачность ==================#
+  - file: "images/touchscreen_480x480/2-12-hail.png"
     id: ${image}_icon_hail_12
     type: RGB565
     transparency: alpha_channel
-#------------------- 51*66px - Иконка град/пасмурно ------------------#
-  - file: "images/weather_png/130_pix/2-3-hail.png"
+#============================= 51*66px - Иконка град/пасмурно ============================#
+  - file: "images/touchscreen_480x480/2-3-hail.png"
     id: ${image}_icon_hail_3
     type: RGB565
     transparency: alpha_channel
-#------ 51*66px - Иконка слякоть/облачно+переменная облачность -------#
-  - file: "images/weather_png/130_pix/2-12-sleet.png"
+#================ 51*66px - Иконка слякоть/облачно+переменная облачность =================#
+  - file: "images/touchscreen_480x480/2-12-sleet.png"
     id: ${image}_icon_sleet_12
     type: RGB565
     transparency: alpha_channel
-#----------------- 51*66px - Иконка слякоть/пасмурно -----------------#
-  - file: "images/weather_png/130_pix/2-3-sleet.png"
+#=========================== 51*66px - Иконка слякоть/пасмурно ===========================#
+  - file: "images/touchscreen_480x480/2-3-sleet.png"
     id: ${image}_icon_sleet_3
     type: RGB565
     transparency: alpha_channel
-#----- 51*66px - Иконка слабый снег/облачно+переменная облачность ----#
-  - file: "images/weather_png/130_pix/2-12-snow-low.png"
+#=============== 51*66px - Иконка слабый снег/облачно+переменная облачность ==============#
+  - file: "images/touchscreen_480x480/2-12-snow-low.png"
     id: ${image}_icon_snow_low_12
     type: RGB565
     transparency: alpha_channel
-#--------------- 51*66px - Иконка слабый снег/пасмурно ---------------#
-  - file: "images/weather_png/130_pix/2-3-snow-low.png"
+#========================= 51*66px - Иконка слабый снег/пасмурно =========================#
+  - file: "images/touchscreen_480x480/2-3-snow-low.png"
     id: ${image}_icon_snow_low_3
     type: RGB565
     transparency: alpha_channel
-#-------- 51*66px - Иконка снег/облачно+переменная облачность --------#
-  - file: "images/weather_png/130_pix/2-12-snow.png"
+#================== 51*66px - Иконка снег/облачно+переменная облачность ==================#
+  - file: "images/touchscreen_480x480/2-12-snow.png"
     id: ${image}_icon_snow_12
     type: RGB565
     transparency: alpha_channel
-#------------------- 51*66px - Иконка снег/пасмурно ------------------#
-  - file: "images/weather_png/130_pix/2-3-snow.png"
+#============================= 51*66px - Иконка снег/пасмурно ============================#
+  - file: "images/touchscreen_480x480/2-3-snow.png"
     id: ${image}_icon_snow_3
     type: RGB565
     transparency: alpha_channel
-#---- 51*66px - Иконка сильный снег/облачно+переменная облачность ----#
-  - file: "images/weather_png/130_pix/2-12-snow-heavy.png"
+#============== 51*66px - Иконка сильный снег/облачно+переменная облачность ==============#
+  - file: "images/touchscreen_480x480/2-12-snow-heavy.png"
     id: ${image}_icon_snow_heavy_12
     type: RGB565
     transparency: alpha_channel
-#--------------- 51*66px - Иконка сильный снег/пасмурно --------------#
-  - file: "images/weather_png/130_pix/2-3-snow-heavy.png"
+#========================= 51*66px - Иконка сильный снег/пасмурно ========================#
+  - file: "images/touchscreen_480x480/2-3-snow-heavy.png"
     id: ${image}_icon_snow_heavy_3
     type: RGB565
     transparency: alpha_channel
-#---- 51*66px - Иконка снег с грозой/облачно+переменная облачность ---#
-  - file: "images/weather_png/130_pix/2-12-snow-light.png"
-    id: ${image}_icon_snow_light_12
-    type: RGB565
-    transparency: alpha_channel
-#-------------- 51*66px - Иконка снег с грозой/пасмурно --------------#
-  - file: "images/weather_png/130_pix/2-3-snow-light.png"
-    id: ${image}_icon_snow_light_3
-    type: RGB565
-    transparency: alpha_channel
-#----------------------- 92*30px - Иконка дымка ----------------------#
-  - file: "images/weather_png/130_pix/4-haze.png"
+#================================= 92*30px - Иконка дымка ================================#
+  - file: "images/touchscreen_480x480/4-haze.png"
     id: ${image}_icon_haze
     type: RGB565
     transparency: alpha_channel
-#----------------------- 92*30px - Иконка туман ----------------------#
-  - file: "images/weather_png/130_pix/4-fog.png"
+#================================= 92*30px - Иконка туман ================================#
+  - file: "images/touchscreen_480x480/4-fog.png"
     id: ${image}_icon_fog
     type: RGB565
     transparency: alpha_channel
-#------------------ 17*40px - Иконка температура 0° ------------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-zero.png"
+#============================ 17*40px - Иконка температура 0° ============================#
+  - file: "images/touchscreen_480x480/0-temp-zero.png"
     id: ${image}_temp_zero
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура выше 0° - 1  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-high-1.png"
+#======================= 17*40px - Иконка температура выше 0° - 1 ========================#
+  - file: "images/touchscreen_480x480/0-temp-high-1.png"
     id: ${image}_temp_high_1
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура выше 0° - 2  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-high-2.png"
+#======================= 17*40px - Иконка температура выше 0° - 2 ========================#
+  - file: "images/touchscreen_480x480/0-temp-high-2.png"
     id: ${image}_temp_high_2
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура выше 0° - 3  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-high-3.png"
+#======================= 17*40px - Иконка температура выше 0° - 3 ========================#
+  - file: "images/touchscreen_480x480/0-temp-high-3.png"
     id: ${image}_temp_high_3
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура выше 0° - 4  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-high-4.png"
+#======================= 17*40px - Иконка температура выше 0° - 4  =======================#
+  - file: "images/touchscreen_480x480/0-temp-high-4.png"
     id: ${image}_temp_high_4
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура ниже 0° - 1  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-low-1.png"
+#======================= 17*40px - Иконка температура ниже 0° - 1 ========================#
+  - file: "images/touchscreen_480x480/0-temp-low-1.png"
     id: ${image}_temp_low_1
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура ниже 0° - 2  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-low-2.png"
+#======================= 17*40px - Иконка температура ниже 0° - 2 ========================#
+  - file: "images/touchscreen_480x480/0-temp-low-2.png"
     id: ${image}_temp_low_2
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура ниже 0° - 3  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-low-3.png"
+#======================= 17*40px - Иконка температура ниже 0° - 3 ========================#
+  - file: "images/touchscreen_480x480/0-temp-low-3.png"
     id: ${image}_temp_low_3
     type: RGB565
     transparency: alpha_channel
-#------------- 17*40px - Иконка температура ниже 0° - 4  -------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-low-4.png"
+#======================= 17*40px - Иконка температура ниже 0° - 4 ========================#
+  - file: "images/touchscreen_480x480/0-temp-low-4.png"
     id: ${image}_temp_low_4
     type: RGB565
     transparency: alpha_channel
-#--------------- 12*25px - Иконка повышения температуры --------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-up.png"
+#========================= 12*25px - Иконка повышения температуры ========================#
+  - file: "images/touchscreen_480x480/0-temp-up.png"
     id: ${image}_temp_up
     type: RGB565
     transparency: alpha_channel
-#--------------- 12*25px - Иконка понижения температуры --------------#
-  - file: "images/weather_png/temp-humi-press/0-temp-down.png"
+#========================= 12*25px - Иконка понижения температуры ========================#
+  - file: "images/touchscreen_480x480/0-temp-down.png"
     id: ${image}_temp_down
     type: RGB565
     transparency: alpha_channel
-#--------------------- 40*40px - Иконка давления ---------------------#
-  - file: "images/weather_png/temp-humi-press/barometer.png"
+#=============================== 40*40px - Иконка давления ===============================#
+  - file: "images/touchscreen_480x480/barometer.png"
     id: ${image}_barometer
     type: RGB565
     transparency: alpha_channel
-#--------------------- 40*40px - Иконка влажности --------------------#
-  - file: "images/weather_png/temp-humi-press/humidity.png"
+#=============================== 40*40px - Иконка влажности ==============================#
+  - file: "images/touchscreen_480x480/humidity.png"
     id: ${image}_humidity
     type: RGB565
     transparency: alpha_channel
 
-#================================ LVGL ===============================#
+########################################### LVGL ##########################################
 lvgl:
-#----------------------------- Настройка -----------------------------#
+#======================================= Настройка =======================================#
   displays:
     - my_display
   touchscreens:
     - my_touchscreen
-#------------------------------- Стили -------------------------------#
+#========================================= Стили =========================================#
   style_definitions:
-#............................... Кнопки ..............................#
+#----------------------------------------- Кнопки ----------------------------------------#
     - id: ${style}_main_button
       width: 150
       height: 150
       pad_all: 0
-#.......................... Нижний заголовок .........................#
+#------------------------------------ Нижний заголовок -----------------------------------#
     - id: header_footer
       bg_color: 0x2F8CD8
       bg_grad_color: 0x005782
@@ -1586,23 +1606,23 @@ lvgl:
       text_color: 0xFFFFFF
       width: 100%
       height: 30
-#-------------------------------- Темы -------------------------------#
+#========================================== Темы =========================================#
   theme:
-#............................... Кнопки ..............................#
+#----------------------------------------- Кнопки ----------------------------------------#
     button:
       bg_color: 0x313131
       text_color: 0xB6B6B6
       checked:
         bg_color: 0xCC5E14
         text_color: 0xB6B6B6
-#.............................. Объекты ..............................#
+#---------------------------------------- Объекты ----------------------------------------#
     obj:
       bg_color: 0x313131
       text_color: 0xB6B6B6
-#---------------------------- Верхний слой ---------------------------#
+#====================================== Верхний слой =====================================#
   top_layer:
       widgets:
-#......................... Загрузочный экран .........................#
+#----------------------------------- Загрузочный экран -----------------------------------#
         - obj:
             id: boot_screen
             x: 0
@@ -1615,12 +1635,12 @@ lvgl:
             pad_all: 0
             border_width: 0
             widgets:
-#'''''''''''''''''''''''''''''''' Лого '''''''''''''''''''''''''''''''#
+#.......................................... Лого .........................................#
               - image:
                   align: CENTER
                   src: ${image}_boot_screen
                   y: -50
-#'''''''''''''''''''''''''''''' Спиннер ''''''''''''''''''''''''''''''#
+#........................................ Спиннер ........................................#
               - spinner:
                   align: CENTER
                   y: 95
@@ -1632,14 +1652,14 @@ lvgl:
                   indicator:
                     arc_color: 0x18bcf2
                     arc_width: 8
-#''''''''''''''''''''''''''''''' Текст '''''''''''''''''''''''''''''''#
+#......................................... Текст .........................................#
               - label:
                   text_font: ${font}_boot_screen
                   align: CENTER
                   y: 45
                   text: "@CrazyBober технологии"
                   text_color: 0x000000
-#------------------------- Главныая страница -------------------------#
+#==================================== Главная страница ===================================#
   page_wrap: true
   pages:
     - id: ${lvgl}_main_page
@@ -1647,7 +1667,7 @@ lvgl:
       bg_color: 0x000000
       bg_opa: cover
       widgets:
-#--------------------------- Виджет погоды ---------------------------#
+#------------------------------------- Виджет погоды -------------------------------------#
         - obj:
             id: ${lvgl}_weather_obj
             x: 5
@@ -1658,7 +1678,7 @@ lvgl:
             scrollable: false
             scrollbar_mode: "OFF"
             widgets:
-#........................... Карточка даты ...........................#
+#..................................... Карточка даты .....................................#
               - label:
                   id: ${lvgl}_date
                   y: -10
@@ -1666,80 +1686,79 @@ lvgl:
                   text_font: ${font}_date_time
                   text: "--.--.--"
                   long_mode: dot
-#'''''''''''''''''''''''' Карточка облачности ''''''''''''''''''''''''#
+#.................................. Карточка облачности ..................................#
               - image:
                   id: ${lvgl}_main_cloudy_icon
-                  x: 38
+                  x: 39
                   y: 30
                   src: ${image}_ha_sensor_na_130
-#''''''''''''''''''' Карточка облачности день/ночь '''''''''''''''''''#
+#............................. Карточка облачности день/ночь .............................#
               - image:
                   id: ${lvgl}_moon_sun_icon
-                  x: 38
+                  x: 39
                   y: 30
                   src: ${image}_ha_sensor_na_55
-#'''''''''''''''''''''''''' Карточка осадков '''''''''''''''''''''''''#
+#.................................... Карточка осадков ...................................#
               - image:
                   id: ${lvgl}_weather_condition_icon
-                  x: 76
+                  x: 77
                   y: 94
                   src: ${image}_ha_sensor_na_51x66
-#'''''''''''''''''''''''''' Карточка молнии ''''''''''''''''''''''''''#
+#.................................... Карточка молнии ....................................#
               - image:
                   id: ${lvgl}_thunder_icon
-                  x: 76
+                  x: 77
                   y: 94
                   src: ${image}_icon_thunder
-#....................... Карточка дымки/тумана .......................#
+#................................. Карточка дымки/тумана .................................#
               - image:
                   id: ${lvgl}_fog_hail_icon
-                  x: 57
+                  x: 58
                   y: 130
                   src: ${image}_ha_sensor_na_92x30
-#..................... Карточка магнитного фона ......................#
+#............................... Карточка магнитного фона ................................#
               - image:
                   id: ${lvgl}_weather_magnet_icon
                   x: -3
                   y: 50
                   src: ${image}_ha_sensor_na_40
-#..................... Карточка качества воздуха .....................#
+#............................... Карточка качества воздуха ...............................#
               - image:
                   id: ${lvgl}_weather_aqi_icon
                   x: -3
                   y: 100
                   src: ${image}_ha_sensor_na_40
-#...................... Карточка скорости ветра ......................#
+#................................ Карточка скорости ветра ................................#
               - image:
                   id: ${lvgl}_weather_wind_icon
                   x: 173
                   y: 50
                   src: ${image}_ha_sensor_na_40
-#................. карточка индикатора скорости ветра ................#
+#........................... Карточка индикатора скорости ветра ..........................#
               - image:
                   id: ${lvgl}_weather_wind_icon_state
                   x: 194
                   y: 70
                   src: ${image}_ha_sensor_na_40
-#.......... Карточка UV индекса, фазы луны и восхода/захода ..........#
+#.................... Карточка UV индекса, фазы луны и восхода/захода ....................#
               - image:
                   id: ${lvgl}_weather_uv_moon_sun_icon
                   x: 173
                   y: 100
                   src: ${image}_ha_sensor_na_40
-#................... Карточка индикатора UV индекса ..................#
+#............................. Карточка индикатора UV индекса ............................#
               - image:
                   id: ${lvgl}_weather_uv_icon_state
                   x: 194
                   y: 121
                   src: ${image}_ha_sensor_na_19
-
-#......................... Иконка температуры ........................#
+#................................... Иконка температуры ..................................#
               - image:
                   id: ${lvgl}_temperature_icon
                   x: -5
                   y: 170
                   src: ${image}_temp_zero
-#......................... Текст температуры .........................#
+#................................... Текст температуры ...................................#
               - label:
                   id: ${lvgl}_temperature_text
                   x: 15
@@ -1747,13 +1766,13 @@ lvgl:
                   text_font: ${font}_temp_humi_press_text
                   text_align: left
                   text: "-00.0°"
-#.......................... Иконка влажности .........................#
+#.................................... Иконка влажности ...................................#
               - image:
                   id: ${lvgl}_humidity_icon
                   x: 65
                   y: 170
                   src: ${image}_humidity
-#......................... Текст температуры .........................#
+#.................................... Текст влажности ....................................#
               - label:
                   id: ${lvgl}_humidity_text
                   x: 100
@@ -1761,13 +1780,13 @@ lvgl:
                   text_font: ${font}_temp_humi_press_text
                   text_align: left
                   text: "00%"
-#.......................... Иконка давления ..........................#
+#.................................... Иконка давления ....................................#
               - image:
                   id: ${lvgl}_pressure_icon
                   x: 145
                   y: 170
                   src: ${image}_barometer
-#........................... Текст давления ..........................#
+#..................................... Текст давления ....................................#
               - label:
                   id: ${lvgl}_pressure_text
                   x: 183
@@ -1775,7 +1794,7 @@ lvgl:
                   text_font: ${font}_temp_humi_press_text
                   text_align: left
                   text: "000"
-#--------------------------- Виджет данных ---------------------------#
+#------------------------------------- Виджет данных -------------------------------------#
         - obj:
             id: ${lvgl}_status_obj
             x: 245
@@ -1786,7 +1805,7 @@ lvgl:
             scrollable: false
             scrollbar_mode: "OFF"
             widgets:
-#''''''''''''''''''''''''''' Карточка часов ''''''''''''''''''''''''''#
+#..................................... Карточка часов ....................................#
               - label:
                   id: ${lvgl}_time
                   y: -10
@@ -1794,14 +1813,14 @@ lvgl:
                   text_font: ${font}_date_time
                   text: "--:--"
                   long_mode: dot
-#................... Текст температуры горячей воды ..................#
+#............................. Текст температуры горячей воды ............................#
               - label:
                   id: ${lvgl}_hot_water_label
                   y: 33
                   text_font: ${font}_date_label
                   text_align: left
                   text: "ГОРЯЧАЯ ВОДА: "
-#................. Показания температуры горячей воды ................#
+#........................... Показания температуры горячей воды ..........................#
               - label:
                   id: ${lvgl}_hot_water_value
                   y: -46
@@ -1809,14 +1828,14 @@ lvgl:
                   text_font: ${font}_date_label
                   text_align: right
                   text: "00.0°"
-#.................. Текст температуры холодной воды ..................#
+#............................ Текст температуры холодной воды ............................#
               - label:
                   id: ${lvgl}_cold_water_label
                   y: 66
                   text_font: ${font}_date_label
                   text_align: left
                   text: "ХОЛОДНАЯ ВОДА: "
-#................ Показания температуры холодной воды ................#
+#.......................... Показания температуры холодной воды ..........................#
               - label:
                   id: ${lvgl}_cold_water_value
                   y: -13
@@ -1824,14 +1843,14 @@ lvgl:
                   text_font: ${font}_date_label
                   text_align: right
                   text: "00.0°"
-#.................... Текст положения кранов воды ....................#
+#.............................. Текст положения кранов воды ..............................#
               - label:
                   id: ${lvgl}_valve_label
                   y: 99
                   text_font: ${font}_date_label
                   text_align: left
                   text: "КРАНЫ: "
-#....................... Положение кранов воды .......................#
+#................................. Положение кранов воды .................................#
               - label:
                   id: ${lvgl}_valve_value
                   y: 20
@@ -1839,14 +1858,14 @@ lvgl:
                   text_font: ${font}_date_label
                   text_align: right
                   text: "НЕИЗВЕСТНО"
-#.................... Текст режима работы фильтра ....................#
+#.............................. Текст режима работы фильтра ..............................#
               - label:
                   id: ${lvgl}_filter_mode_label
                   y: 132
                   text_font: ${font}_date_label
                   text_align: left
                   text: "РЕЖИМ: "
-#........................ Режим работы фильтра .......................#
+#.................................. Режим работы фильтра .................................#
               - label:
                   id: ${lvgl}_filter_mode_value
                   y: 53
@@ -1854,14 +1873,14 @@ lvgl:
                   text_font: ${font}_date_label
                   text_align: right
                   text: "НЕИЗВЕСТНО"
-#..................... Текст наличия воды в баке .....................#
+#............................... Текст наличия воды в баке ...............................#
               - label:
                   id: ${lvgl}_filter_tank_label
                   y: 165
                   text_font: ${font}_date_label
                   text_align: left
                   text: "ВОДА В БАКЕ: "
-#........................ Наличие воды в баке ........................#
+#.................................. Наличие воды в баке ..................................#
               - label:
                   id: ${lvgl}_filter_tank_value
                   y: 86
@@ -1869,15 +1888,29 @@ lvgl:
                   text_font: ${font}_date_label
                   text_align: right
                   text: "НЕИЗВЕСТНО"
-#------------------------------- Кнопки ------------------------------#
+#--------------------------------- Кнопка света в ванной ---------------------------------#
         - button:
-#........................ Наличие воды в баке ........................#
             id: ${lvgl}_bathroom_light_button
             x: 5
             y: 320
             checkable: true
             styles: ${style}_main_button
             widgets:
+#..................................... Иконка кнопки .....................................#
+              - label:
+                  id: ${lvgl}_bathroom_light_icon
+                  y: 24
+                  text_font: ${font}_light_button
+                  align: top_mid
+                  text: "\U000F09A0"
+#...................................... Текст кнопки .....................................#
+              - label:
+                  id: ${lvgl}_bathroom_light_name
+                  align: bottom_mid
+                  long_mode: DOT
+                  text_font: ${font}_light_button_name
+                  text: "ВАННАЯ"
+#................................... Иконка температуры ..................................#
               - label:
                   id: ${lvgl}_bathroom_temp_icon
                   x: 3
@@ -1885,6 +1918,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "\U000F050F"
+#................................... Текст температуры ...................................#
               - label:
                   id: ${lvgl}_bathroom_temp
                   x: 25
@@ -1893,6 +1927,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "----"
+#.................................... Иконка влажности ...................................#
               - label:
                   id: ${lvgl}_bathroom_humi_icon
                   x: 78
@@ -1900,6 +1935,7 @@ lvgl:
                   text_font: ${font}_humi_text
                   text_align: right
                   text: "\U000F058E"
+#.................................... Текст влажности ....................................#
               - label:
                   id: ${lvgl}_bathroom_humi
                   x: -8
@@ -1908,18 +1944,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "---"
-              - label:
-                  id: ${lvgl}_bathroom_light_icon
-                  y: 24
-                  text_font: ${font}_light_button
-                  align: top_mid
-                  text: "\U000F09A0"
-              - label:
-                  id: ${lvgl}_bathroom_light_name
-                  align: bottom_mid
-                  long_mode: DOT
-                  text_font: ${font}_light_button_name
-                  text: "ВАННАЯ"
+#--------------------------------- Кнопка света на кухне ---------------------------------#
         - button:
             id: ${lvgl}_kitchen_light_button
             x: 165
@@ -1927,6 +1952,21 @@ lvgl:
             styles: ${style}_main_button
             checkable: true
             widgets:
+#..................................... Иконка кнопки .....................................#
+              - label:
+                  id: ${lvgl}_kitchen_light_icon
+                  y: 24
+                  text_font: ${font}_light_button
+                  align: top_mid
+                  text: "\U000F181D"
+#...................................... Текст кнопки .....................................#
+              - label:
+                  id: ${lvgl}_kitchen_light_name
+                  align: bottom_mid
+                  long_mode: DOT
+                  text_font: ${font}_light_button_name
+                  text: "КУХНЯ"
+#................................... Иконка температуры ..................................#
               - label:
                   id: ${lvgl}_kitchen_temp_icon
                   x: 3
@@ -1934,6 +1974,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "\U000F050F"
+#................................... Текст температуры ...................................#
               - label:
                   id: ${lvgl}_kitchen_temp
                   x: 25
@@ -1942,6 +1983,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "----"
+#.................................... Иконка влажности ...................................# 
               - label:
                   id: ${lvgl}_kitchen_humi_icon
                   x: 78
@@ -1949,6 +1991,7 @@ lvgl:
                   text_font: ${font}_humi_text
                   text_align: right
                   text: "\U000F058E"
+#.................................... Текст влажности ....................................#
               - label:
                   id: ${lvgl}_kitchen_humi
                   x: -8
@@ -1957,18 +2000,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "---"
-              - label:
-                  id: ${lvgl}_kitchen_light_icon
-                  y: 24
-                  text_font: ${font}_light_button
-                  align: top_mid
-                  text: "\U000F181D"
-              - label:
-                  id: ${lvgl}_kitchen_light_name
-                  align: bottom_mid
-                  long_mode: DOT
-                  text_font: ${font}_light_button_name
-                  text: "КУХНЯ"
+#--------------------------------- Кнопка света в туалете --------------------------------#
         - button:
             id: ${lvgl}_toilet_light_button
             x: 325
@@ -1976,6 +2008,21 @@ lvgl:
             styles: ${style}_main_button
             checkable: true
             widgets:
+#..................................... Иконка кнопки .....................................#
+              - label:
+                  id: ${lvgl}_toilet_light_icon
+                  y: 24
+                  text_font: ${font}_light_button
+                  align: top_mid
+                  text: "\U000F09AB"
+#...................................... Текст кнопки .....................................#
+              - label:
+                  id: ${lvgl}_toilet_light_name
+                  align: bottom_mid
+                  long_mode: DOT
+                  text_font: ${font}_light_button_name
+                  text: "ТУАЛЕТ"
+#................................... Иконка температуры ..................................#
               - label:
                   id: ${lvgl}_toilet_temp_icon
                   x: 3
@@ -1983,6 +2030,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "\U000F050F"
+#................................... Текст температуры ...................................#
               - label:
                   id: ${lvgl}_toilet_temp
                   x: 25
@@ -1991,6 +2039,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "----"
+#.................................... Иконка влажности ...................................#
               - label:
                   id: ${lvgl}_toilet_humi_icon
                   x: 78
@@ -1998,6 +2047,7 @@ lvgl:
                   text_font: ${font}_humi_text
                   text_align: right
                   text: "\U000F058E"
+#.................................... Текст влажности ....................................#
               - label:
                   id: ${lvgl}_toilet_humi
                   x: -8
@@ -2006,20 +2056,7 @@ lvgl:
                   text_font: ${font}_temphumi_text
                   text_align: right
                   text: "---" 
-              - label:
-                  id: ${lvgl}_toilet_light_icon
-                  y: 24
-                  text_font: ${font}_light_button
-                  align: top_mid
-                  text: "\U000F09AB"
-              - label:
-                  id: ${lvgl}_toilet_light_name
-                  align: bottom_mid
-                  long_mode: DOT
-                  text_font: ${font}_light_button_name
-                  text: "ТУАЛЕТ"
-
-#............... Кнопка блокировки управления с пульта ...............#
+#------------------- Кнопка блокировки управления с выключателя Aquara -------------------#
         - button:
             id: ${lvgl}_lock_button
             x: 5
@@ -2046,36 +2083,32 @@ lvgl:
                     { auto *btn = static_cast<lv_obj_t*>(timer->user_data);
                     if (lv_obj_has_state(btn, LV_STATE_PRESSED))
                       { uint32_t duration = lv_tick_elaps(press_time);
-                      if (duration >= 3000) 
+                      if (duration >= 3000)
                         { if (lv_obj_has_state(btn, LV_STATE_CHECKED))
                           { lv_obj_clear_state(btn, LV_STATE_CHECKED);
-
                             lv_obj_set_style_bg_color(id(${lvgl}_main_page)->obj, lv_color_hex(0x008000), 0);
                             lv_timer_create([](lv_timer_t *timer) {
                             lv_obj_set_style_bg_color(id(${lvgl}_main_page)->obj, lv_color_hex(0x000000), 0);
                             lv_timer_del(timer);
                             }, 500, nullptr);
-
                             lv_label_set_text(${lvgl}_lock_button_icon, "\U000F16AB"); }
                           else
                             { lv_obj_add_state(btn, LV_STATE_CHECKED);
-
                               lv_obj_set_style_bg_color(id(${lvgl}_main_page)->obj, lv_color_hex(0xFF0000), 0);
                               lv_timer_create([](lv_timer_t *timer) {
                               lv_obj_set_style_bg_color(id(${lvgl}_main_page)->obj, lv_color_hex(0x000000), 0);
                               lv_timer_del(timer);
                               }, 500, nullptr);
-
                               lv_label_set_text(${lvgl}_lock_button_icon, "\U000F0341"); }
                         lv_timer_del(timer); } }
                       else
                         { lv_timer_del(timer); } }, 100, id(${lvgl}_lock_button));
-
-#............... Кнопка включения освещения столешницы ...............#
+#------------------------- Кнопка включения освещения столешницы -------------------------#
         - button:
             id: ${lvgl}_table_light_button
             x: 165
             y: 235
+            styles: ${style}_main_button
             width: 70
             height: 70
             checkable: true
@@ -2085,8 +2118,14 @@ lvgl:
                   text_font: ${font}_small_button_icon
                   align: center
                   text: "\U000F091D"
+            on_click:
+              then:
+                - lambda: |-
+                    std::map<std::string, std::string> data;
+                    data["entity_id"] = "switch.kitchen_hood_table_light";
+                    api::global_api_server->send_service_call("switch.toggle", data);
 
-#............ Кнопка включения кнопок управления вытяжкой ............#
+#---------------------- Кнопка включения виджета управления вытяжкой ---------------------#
         - button:
             id: ${lvgl}_hood_control_button
             x: 245
@@ -2112,8 +2151,8 @@ lvgl:
                     lv_obj_clear_flag(id(${lvgl}_hood_speed_3_button), LV_OBJ_FLAG_HIDDEN);
                     lv_obj_clear_flag(id(${lvgl}_hood_speed_4_button), LV_OBJ_FLAG_HIDDEN);
                     lv_obj_clear_flag(id(${lvgl}_hood_speed_auto_button), LV_OBJ_FLAG_HIDDEN);
-
-#............ Кнопка включения кнопок управления вытяжкой ............#
+#------------------------------- Виджет управления вытяжкой ------------------------------#
+#............................... Кнопка выключения вытяжки ...............................#
         - button:
             id: ${lvgl}_hood_off_button
             x: 5
@@ -2129,10 +2168,9 @@ lvgl:
             on_click:
               then:
                 - select.set:
-                    id: ${device}_hood_mode_select
+                    id: ${device}_hood_speed
                     option: "OFF"
-
-#............ Кнопка включения кнопок управления вытяжкой ............#
+#................................. Кнопка первой скорости ................................#
         - button:
             id: ${lvgl}_hood_speed_1_button
             x: 85
@@ -2148,10 +2186,9 @@ lvgl:
             on_click:
               then:
                 - select.set:
-                    id: ${device}_hood_mode_select
+                    id: ${device}_hood_speed
                     option: "1"
-
-#............ Кнопка включения кнопок управления вытяжкой ............#
+#................................. Кнопка второй скорости ................................#
         - button:
             id: ${lvgl}_hood_speed_2_button
             x: 165
@@ -2167,10 +2204,9 @@ lvgl:
             on_click:
               then:
                 - select.set:
-                    id: ${device}_hood_mode_select
+                    id: ${device}_hood_speed
                     option: "2"
-
-#............ Кнопка включения кнопок управления вытяжкой ............#
+#................................. Кнопка третьей скорости ...............................#
         - button:
             id: ${lvgl}_hood_speed_3_button
             x: 245
@@ -2186,11 +2222,9 @@ lvgl:
             on_click:
               then:
                 - select.set:
-                    id: ${device}_hood_mode_select
+                    id: ${device}_hood_speed
                     option: "3"
-
-
-#............ Кнопка включения кнопок управления вытяжкой ............#
+#............................... Кнопка четвертой скорости ...............................#
         - button:
             id: ${lvgl}_hood_speed_4_button
             x: 325
@@ -2206,10 +2240,9 @@ lvgl:
             on_click:
               then:
                 - select.set:
-                    id: ${device}_hood_mode_select
+                    id: ${device}_hood_speed
                     option: "4"
-
-#............ Кнопка включения кнопок управления вытяжкой ............#
+#..................... Кнопка автоматического регулирования скорости .....................#
         - button:
             id: ${lvgl}_hood_speed_auto_button
             x: 405
@@ -2225,5 +2258,5 @@ lvgl:
             on_click:
               then:
                 - select.set:
-                    id: ${device}_hood_mode_select
+                    id: ${device}_hood_speed
                     option: "AUTO"
